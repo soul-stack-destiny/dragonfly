@@ -1,0 +1,174 @@
+# A TLS replica of another instance, with an extra ACL user and a passthrough flag.
+#
+# What this case pins down:
+#   - the certificate and key are read from Vault by path and written 0600 to the service account
+#     — the PEM content reaches the file, never a command line;
+#   - no CA was passed, so no CA file is written: supplying one would make client certificates
+#     mandatory, which is not what ordinary server-side TLS means;
+#   - the replication password is a secret and goes into the 0600 environment file, while the
+#     replica's master and user land in the flagfile;
+#   - the flagfile is rendered against the full context, which is the proof that every input
+#     value actually reaches the file that is written on the host.
+name: dragonfly renders a TLS replica with an extra ACL user
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  # The secrets the unit reads by path. In production these are real Vault paths; here they are
+  # provided by the case, so the render stays hermetic.
+  vault:
+    secret/dragonfly/tls:
+      cert: "-----BEGIN CERTIFICATE-----\ntrial-cert\n-----END CERTIFICATE-----"
+      key: "-----BEGIN PRIVATE KEY-----\ntrial-key\n-----END PRIVATE KEY-----"
+  input:
+    version: "1.39.0"
+    password: "trial-password"
+    users:
+      reporting:
+        perms: "~report:* +@read"
+        state: "on"
+        password: "trial-reporting-password"
+    tls:
+      enable: true
+      cert_ref: "secret/dragonfly/tls#cert"
+      key_ref: "secret/dragonfly/tls#key"
+    tls_replication: true
+    replica_of: "10.0.0.5:6379"
+    master_user: "replication"
+    master_auth: "trial-replication-password"
+    maxmemory: "4GiB"
+    proactor_threads: 4
+    extra_flags: { dbnum: "4" }
+  soulprint:
+    os:
+      arch: amd64
+    network:
+      primary_ip: 10.0.0.6
+
+assert:
+  task_present:
+    # The TLS directory is the service account's, so only Dragonfly can read the key sitting in it.
+    - module: core.directory.present
+      params_subset:
+        path: /etc/dragonfly/tls
+        owner: dragonfly
+        group: dragonfly
+        mode: "0750"
+
+    # Each PEM file: the content comes from Vault, resolved before the plan leaves the control
+    # plane.
+    - module: core.file.present
+      params_subset:
+        path: /etc/dragonfly/tls/dragonfly.crt
+        content: "-----BEGIN CERTIFICATE-----\ntrial-cert\n-----END CERTIFICATE-----"
+        mode: "0600"
+        owner: dragonfly
+        group: dragonfly
+
+    - module: core.file.present
+      params_subset:
+        path: /etc/dragonfly/tls/dragonfly.key
+        content: "-----BEGIN PRIVATE KEY-----\ntrial-key\n-----END PRIVATE KEY-----"
+        mode: "0600"
+        owner: dragonfly
+
+    # The flagfile, rendered against the full context. vars carries the unit's own fixed values
+    # (the paths, the resolved bind addresses and the switches the template branches on), input
+    # carries the effective contract after defaults.
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/dragonfly/dragonfly.conf
+        template_content: "<present>"
+        render_context:
+          vars:
+            listen_host: 10.0.0.6
+            console_enabled: true
+            console_listen_host: 127.0.0.1
+            acl_enabled: true
+            acl_path: /etc/dragonfly/users.acl
+            tls_enabled: true
+            tls_ca_enabled: false
+            tls_cert_path: /etc/dragonfly/tls/dragonfly.crt
+            tls_key_path: /etc/dragonfly/tls/dragonfly.key
+            tls_ca_path: /etc/dragonfly/tls/ca.crt
+            snapshot_remote: false
+            snapshot_dir_eff: /var/lib/dragonfly
+            s3_enabled: false
+            s3_endpoint: ""
+            s3_use_https: true
+            s3_sign_payload: true
+            s3_ec2_metadata: false
+          input:
+            ensure: present
+            purge_data: false
+            version: "1.39.0"
+            sha256: ""
+            base_url: https://github.com/dragonflydb/dragonfly/releases/download
+            allow_private: false
+            bin_dir: /usr/local/bin
+            user: dragonfly
+            group: dragonfly
+            conf_dir: /etc/dragonfly
+            data_dir: /var/lib/dragonfly
+            log_dir: /var/log/dragonfly
+            host: ""
+            port: 6379
+            http_console: false
+            admin_port: 6380
+            admin_bind: ""
+            maxclients: 64000
+            maxmemory: 4GiB
+            proactor_threads: 4
+            cache_mode: false
+            snapshot_cron: ""
+            dbfilename: dump
+            snapshot_retention_days: 0
+            snapshot_uri: ""
+            snapshot_s3: {}
+            password: trial-password
+            default_perms: "~* &* +@all -@admin -@dangerous"
+            admin_user: default_admin
+            admin_password: ""
+            users:
+              reporting:
+                perms: "~report:* +@read"
+                state: "on"
+                password: trial-reporting-password
+            allow_unauthenticated: false
+            tls:
+              enable: true
+              cert_ref: "secret/dragonfly/tls#cert"
+              key_ref: "secret/dragonfly/tls#key"
+            tls_replication: true
+            replica_of: "10.0.0.5:6379"
+            master_user: replication
+            master_auth: trial-replication-password
+            extra_flags: { dbnum: "4" }
+            extra_env: {}
+            sysctl_settings: {}
+            version_check: false
+            wait_ready: true
+          self:
+            sid: trial-host
+            covens: [apply]
+            choirs: []
+            traits: {}
+            role: ""
+            os:
+              arch: amd64
+            network:
+              primary_ip: 10.0.0.6
+          role: ""
+          essence: {}
+
+    # Readiness stays plain HTTP on loopback even with TLS on the data port — the flagfile keeps
+    # the console out of TLS on purpose, so a local scraper needs no certificate.
+    - module: core.http.probe
+      params_subset:
+        url: http://127.0.0.1:6380/metrics
+
+  task_absent:
+    # No CA was passed, so no CA file is written: with one, Dragonfly would demand a client
+    # certificate from every connection.
+    - module: core.file.present
+      params_subset:
+        path: /etc/dragonfly/tls/ca.crt

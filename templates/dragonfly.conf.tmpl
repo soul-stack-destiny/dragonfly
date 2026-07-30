@@ -1,0 +1,106 @@
+{{- /*
+  dragonfly.conf — the flagfile, handed to the process with --flagfile.
+
+  Dragonfly is configured with command-line flags rather than a Redis-style config file, and a
+  flagfile is one flag per line, "--name=value", no quoting: a value with spaces (a cron
+  expression, for instance) runs to the end of the line as it stands. Blank lines and lines
+  starting with a hash are ignored, so the file can carry its own notes. Where a flag appears
+  twice, the LAST one wins — which is what lets the passthrough block at the bottom override
+  anything above it.
+
+  Deliberately NOT in this file: the passwords. They are secrets, and this file is readable by
+  the service account. They travel in the 0600 root-only environment file instead, which
+  Dragonfly reads as DFLY_requirepass and DFLY_masterauth.
+
+  Written by the dragonfly unit. Local edits are overwritten on the next run.
+*/ -}}
+# The data port.
+--bind={{ .vars.listen_host }}
+--port={{ .input.port }}
+--maxclients={{ .input.maxclients }}
+# The HTTP console on the data port answers WITHOUT authentication, even when the port itself
+# demands a password, so it is off unless it was asked for.
+--primary_port_http_enabled={{ .input.http_console }}
+{{ if .vars.console_enabled -}}
+# The console port: Prometheus metrics at /metrics, and the admin surface over the Redis
+# protocol. No separate exporter is needed for this service.
+--admin_port={{ .input.admin_port }}
+--admin_bind={{ .vars.console_listen_host }}
+{{- if .vars.tls_enabled }}
+# The console stays plain HTTP while the data port speaks TLS: it is a local endpoint, and this
+# is what lets a scraper (and this unit's readiness check) reach it without a certificate.
+--no_tls_on_admin_port=true
+{{- end }}
+{{ end -}}
+{{ if .vars.snapshot_remote -}}
+# Snapshots go to object storage, which is where this instance also LOADS them from at startup —
+# an unreachable bucket stops the service coming up rather than silently skipping backups.
+{{- else -}}
+# Snapshots — the only state this service keeps on disk, and so the only thing to back up.
+{{- end }}
+--dir={{ .vars.snapshot_dir_eff }}
+--dbfilename={{ .input.dbfilename }}
+{{- if .vars.s3_enabled }}
+{{- if .vars.s3_endpoint }}
+# S3-compatible storage rather than AWS itself.
+--s3_endpoint={{ .vars.s3_endpoint }}
+{{- end }}
+--s3_use_https={{ .vars.s3_use_https }}
+--s3_sign_payload={{ .vars.s3_sign_payload }}
+--s3_ec2_metadata={{ .vars.s3_ec2_metadata }}
+{{- end }}
+{{- if .input.snapshot_cron }}
+--snapshot_cron={{ .input.snapshot_cron }}
+{{- else }}
+# No schedule was configured: snapshots are only written when something asks for one over the
+# wire, so a restart loses everything since the last such save.
+{{- end }}
+
+# Memory and threads. A limit below 256 MiB per io thread makes Dragonfly refuse to start.
+{{- if .input.maxmemory }}
+--maxmemory={{ .input.maxmemory }}
+{{- end }}
+{{- if .input.proactor_threads }}
+--proactor_threads={{ .input.proactor_threads }}
+{{- end }}
+--cache_mode={{ .input.cache_mode }}
+
+# Logging, and no phoning home unless it was asked for.
+--log_dir={{ .input.log_dir }}
+--version_check={{ .input.version_check }}
+{{- if .vars.acl_enabled }}
+
+# The ACL file. It carries the `default` user, which is what closes this instance: with an ACL
+# file configured, Dragonfly takes its whole user list from it.
+--aclfile={{ .vars.acl_path }}
+{{- end }}
+{{- if .vars.tls_enabled }}
+
+# TLS runs on the data port itself — there is no separate TLS port, so this closes the plaintext
+# one. The material is written by this unit from the secret store.
+--tls=true
+--tls_cert_file={{ .vars.tls_cert_path }}
+--tls_key_file={{ .vars.tls_key_path }}
+{{- if .vars.tls_ca_enabled }}
+# A CA here means client certificates are REQUIRED, not merely accepted.
+--tls_ca_cert_file={{ .vars.tls_ca_path }}
+{{- end }}
+{{- if .input.tls_replication }}
+--tls_replication=true
+{{- end }}
+{{- end }}
+{{- if .input.replica_of }}
+
+# Replication, as of startup. A later REPLICAOF over the wire wins until the process restarts.
+--replicaof={{ .input.replica_of }}
+{{- if .input.master_user }}
+--masteruser={{ .input.master_user }}
+{{- end }}
+{{- end }}
+{{- if .input.extra_flags }}
+
+# Passthrough. The last occurrence of a flag wins, so these override anything above.
+{{- range $name, $value := .input.extra_flags }}
+--{{ $name }}={{ $value }}
+{{- end }}
+{{- end }}

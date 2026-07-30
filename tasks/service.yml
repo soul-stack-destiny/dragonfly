@@ -1,0 +1,166 @@
+# tasks/service.yml — the binary, the configuration, the unit, the service and the readiness
+# check. Everything whose change should restart the daemon lives here, next to the restart step
+# that reacts to it: a register and the task reading it must be in the same file.
+#
+# Dragonfly reads its flagfile once, at startup, so a changed flagfile, ACL file, environment
+# file, unit or binary is applied by restarting the process. (The ACL file can also be reloaded
+# over the wire with ACL LOAD, but that is a live operation for whatever manages the instance,
+# not something this unit reaches in to do.)
+
+# Lay the binary out from the unpacked archive. The desired state is the source file's content, so
+# this step changes exactly when the binary's bytes change (a version upgrade) or its mode drifts.
+- name: Install the dragonfly binary
+  module: core.file.present
+  register: dragonfly_bin
+  params:
+    path:  "${ vars.bin_path }"
+    src:   "${ vars.src_bin }"
+    mode:  "0755"
+    owner: "${ vars.root_owner }"
+    group: "${ vars.root_group }"
+
+# ── TLS material ───────────────────────────────────────────────────────────────
+# Written before the flagfile and before the service starts: the flagfile points at these files
+# and Dragonfly must find them at startup. The PEM content is read from Vault by path, so it never
+# reaches a command line or a log.
+- name: Provision the dragonfly TLS material
+  when: "vars.tls_enabled"
+  block:
+    # 0750 dragonfly — only the service can read the private key next to it.
+    - name: Ensure the dragonfly TLS directory exists
+      module: core.directory.present
+      params:
+        path:  "${ vars.tls_dir }"
+        owner: "${ input.user }"
+        group: "${ input.group }"
+        mode:  "0750"
+
+    - name: Render the dragonfly TLS certificate
+      module: core.file.present
+      register: dragonfly_tls_cert
+      params:
+        path:    "${ vars.tls_cert_path }"
+        content: "${ vault(input.tls.cert_ref) }"
+        mode:    "${ vars.pem_mode }"
+        owner:   "${ input.user }"
+        group:   "${ input.group }"
+
+    - name: Render the dragonfly TLS private key
+      module: core.file.present
+      register: dragonfly_tls_key
+      params:
+        path:    "${ vars.tls_key_path }"
+        content: "${ vault(input.tls.key_ref) }"
+        mode:    "${ vars.pem_mode }"
+        owner:   "${ input.user }"
+        group:   "${ input.group }"
+
+# The CA — separate from the pair above because it is optional and it changes what the server
+# demands: with a CA configured, Dragonfly requires every client to present a certificate.
+- name: Render the dragonfly TLS CA certificate
+  module: core.file.present
+  when: "vars.tls_ca_enabled"
+  register: dragonfly_tls_ca
+  params:
+    path:    "${ vars.tls_ca_path }"
+    content: "${ vault(input.tls.ca_ref) }"
+    mode:    "${ vars.pem_mode }"
+    owner:   "${ input.user }"
+    group:   "${ input.group }"
+
+# ── The ACL file ───────────────────────────────────────────────────────────────
+# Rendered whenever a password is set. It carries the two system accounts — `default`, which
+# applications connect as, and the administrative one when a password was given for it — plus any
+# extra users. It is what closes the instance: with an ACL file configured, Dragonfly takes its
+# whole user list from it, and a `default` missing there means a passwordless `default` no matter
+# what else is set.
+- name: Render the dragonfly ACL file
+  module: core.file.rendered
+  when: "vars.acl_enabled"
+  register: dragonfly_acl
+  params:
+    path:     "${ vars.acl_path }"
+    template: templates/users.acl.tmpl
+    mode:     "${ vars.config_file_mode }"
+    owner:    "${ vars.root_owner }"
+    group:    "${ input.group }"
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+# The flagfile carries no secret: the passwords travel through the environment file below. 0640
+# root:dragonfly — the service reads it through its group, the world does not.
+- name: Render the dragonfly flagfile
+  module: core.file.rendered
+  register: dragonfly_config
+  params:
+    path:     "${ vars.config_path }"
+    template: templates/dragonfly.conf.tmpl
+    mode:     "${ vars.config_file_mode }"
+    owner:    "${ vars.root_owner }"
+    group:    "${ input.group }"
+
+# The 0600 root-only environment file: the password, the replication password and any extra
+# environment overrides. systemd reads it as root before the process starts, so the secrets stay
+# out of the world-readable unit and out of the flagfile on disk.
+- name: Render the dragonfly environment file
+  module: core.file.rendered
+  register: dragonfly_env
+  params:
+    path:     "${ vars.env_path }"
+    template: templates/dragonfly.env.tmpl
+    mode:     "${ vars.env_file_mode }"
+    owner:    "${ vars.root_owner }"
+    group:    "${ vars.root_group }"
+
+# The systemd unit: the service account, the sandbox and the start command.
+- name: Render the dragonfly systemd unit
+  module: core.file.rendered
+  register: dragonfly_unit
+  params:
+    path:     "${ vars.systemd_dir + '/' + vars.service_name + '.service' }"
+    template: templates/dragonfly.service.tmpl
+    mode:     "${ vars.unit_file_mode }"
+    owner:    "${ vars.root_owner }"
+    group:    "${ vars.root_group }"
+
+- name: Ensure dragonfly is running and enabled at boot
+  module: core.service.running
+  params:
+    name:    "${ vars.service_name }"
+    enabled: true
+
+# Restart when anything the running process cannot pick up by itself has changed: the flagfile,
+# the ACL file, the environment file (passwords), the unit or the binary (a version upgrade). A
+# rotated certificate is in the list too — Dragonfly loads it once at startup. systemd is re-read
+# automatically before the restart when the unit file itself changed.
+#
+# On a first install nothing here has "changed" relative to a running process: the start above
+# already brings the service up with the final flagfile, users and certificate.
+- name: Restart dragonfly because its config, users, keys, unit, binary or certificate changed
+  module: core.service.restarted
+  onchanges: [dragonfly_config, dragonfly_acl, dragonfly_env, dragonfly_unit, dragonfly_bin, dragonfly_tls_cert, dragonfly_tls_key, dragonfly_tls_ca]
+  timeout: 60s
+  params:
+    name: "${ vars.service_name }"
+
+# ── Readiness ──────────────────────────────────────────────────────────────────
+# Poll /metrics on the console port until Dragonfly answers, so a failed start surfaces here
+# rather than in whatever talks to the datastore next. Dragonfly rejects a whole class of
+# configurations at startup (a memory limit below its per-thread floor, TLS without a way to
+# authenticate) and this is where that shows up.
+#
+# The endpoint needs no password, and the console stays plain HTTP even when the data port speaks
+# TLS. Skipped when the console is disabled — there is then nothing to poll.
+#
+# The two relaxations are deliberate and local: the address is this host's own (loopback by
+# default), and it is plain HTTP by construction.
+- name: Wait until dragonfly answers on its console port
+  module: core.http.probe
+  when: "input.wait_ready && vars.console_enabled"
+  retry: { count: 10, delay: 3s }
+  params:
+    url:           "${ vars.readiness_url }"
+    method:        GET
+    status_codes:  [200]
+    timeout:       5s
+    allow_http:    true
+    allow_private: true

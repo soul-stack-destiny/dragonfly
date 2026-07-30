@@ -1,0 +1,54 @@
+# tasks/account.yml — the service account and the directories it owns.
+#
+# Dragonfly keeps its dataset in memory, but its snapshots outlive restarts and upgrades, so the
+# account must have a stable uid (a transient, systemd-generated user would leave the next run
+# unable to read its own snapshot). The group is created BEFORE the user, because creating a user
+# with a primary group requires that group to exist.
+
+- name: Ensure the dragonfly system group exists
+  module: core.group.present
+  params:
+    name: "${ input.group }"
+    system: true
+
+# No home directory: a system account that never logs in.
+- name: Ensure the dragonfly system user exists
+  module: core.user.present
+  params:
+    name: "${ input.user }"
+    system: true
+    group: "${ input.group }"
+    shell: /usr/sbin/nologin
+
+# data_dir — the working directory, and the one thing on this host worth backing up: Dragonfly
+# writes and loads its snapshots here. 0750: the snapshots are not world-readable. parents:true
+# covers a directory whose parent is a mount point that does not exist yet.
+- name: Ensure the dragonfly data directory exists
+  module: core.directory.present
+  params:
+    path:    "${ input.data_dir }"
+    owner:   "${ input.user }"
+    group:   "${ input.group }"
+    mode:    "0750"
+    parents: true
+
+# The log directory: Dragonfly names its log files itself, this is where it puts them.
+- name: Ensure the dragonfly log directory exists
+  module: core.directory.present
+  params:
+    path:    "${ input.log_dir }"
+    owner:   "${ input.user }"
+    group:   "${ input.group }"
+    mode:    "0750"
+    parents: true
+
+# The config directory is owned by root — root writes the flagfile and the ACL file, the service
+# reads them through the group. 0750 keeps it away from other users.
+- name: Ensure the dragonfly config directory exists
+  module: core.directory.present
+  params:
+    path:    "${ input.conf_dir }"
+    owner:   "${ vars.root_owner }"
+    group:   "${ input.group }"
+    mode:    "0750"
+    parents: true

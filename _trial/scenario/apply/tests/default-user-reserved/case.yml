@@ -1,0 +1,28 @@
+# The guard against silently voiding the whole ACL file.
+#
+# Dragonfly rejects an ACL file that disables the `default` user — the entire file, with nothing
+# but a line in its log — and carries on with the built-in passwordless `default`. An instance
+# that looks locked down is then wide open, and nothing about the run says so.
+#
+# The unit renders `default` itself, from the password field, so a caller declaring it in `users`
+# is either duplicating that line or walking into exactly that trap. Either way it is refused
+# before anything reaches a host.
+name: dragonfly refuses a caller-declared default user in the ACL map
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    version: "1.39.0"
+    password: "trial-password"
+    users:
+      default:
+        perms: "~* &* +@all"
+        state: "off"
+        password: "trial-other"
+  soulprint:
+    os:
+      arch: amd64
+    network:
+      primary_ip: 10.0.0.5
+
+expect_render_error: "do not declare a `default` user in users"

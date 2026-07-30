@@ -1,0 +1,132 @@
+# vars.yml — fixed values used across the tasks. Same on every host, not overridable from the
+# outside (unlike the fields in destiny.yml). They may read input (they are computed after the
+# input has been validated). No secrets here — this file is committed.
+
+# ── Service and unit names ─────────────────────────────────────────────────────
+# INVARIANT: the unit name ties together the unit file, the start/restart steps and the log
+# identifier. It matching the binary name is a coincidence, not a rule.
+service_name: dragonfly
+# The snapshot-pruning pair (see tasks/backup.yml). Only installed when a retention is asked for.
+prune_service_name: dragonfly-snapshot-prune
+
+# ── Release artifact ───────────────────────────────────────────────────────────
+# Dragonfly names its release tarballs after the machine architecture in uname spelling, not in
+# the amd64/arm64 spelling this host reports — and the file name carries NO version, only the
+# release tag in the path does. An unknown architecture yields an empty string, so the URL fails
+# honestly instead of installing something unexpected.
+arch_suffix: >-
+  ${ has(soulprint.self.os) && has(soulprint.self.os.arch)
+       ? (soulprint.self.os.arch == 'amd64' ? 'x86_64'
+          : (soulprint.self.os.arch == 'arm64' ? 'aarch64' : ''))
+       : '' }
+
+# Staging paths for the downloaded artifact. /tmp is a fixed staging area; the names carry the
+# version so two versions never collide.
+tarball_path: "${ '/tmp/dragonfly-' + input.version + '.tar.gz' }"
+extract_dir:  "${ '/tmp/dragonfly-' + input.version }"
+
+# The archive holds two files at its root: the licence and the binary, whose name carries the
+# architecture suffix (dragonfly-x86_64, dragonfly-aarch64).
+src_bin: "${ vars.extract_dir + '/dragonfly-' + vars.arch_suffix }"
+
+# Installed binary path — the single source of truth for the unit template and the teardown.
+bin_path: "${ input.bin_dir + '/dragonfly' }"
+
+# ── Configuration paths ────────────────────────────────────────────────────────
+# Dragonfly reads one flagfile (passed with --flagfile). The environment file carries the
+# passwords and any extra environment overrides; it is 0600 root-only and read by systemd before
+# the process starts, so no secret lands in the world-readable unit or in the flagfile.
+config_path: "${ input.conf_dir + '/dragonfly.conf' }"
+acl_path:    "${ input.conf_dir + '/users.acl' }"
+env_path:    /etc/default/dragonfly
+
+# ── Authentication ─────────────────────────────────────────────────────────────
+# The ACL file is rendered whenever there is a password: it is what pins the built-in `default`
+# user down. With no password the instance is deliberately open (allow_unauthenticated) and no
+# ACL file is written — an ACL file that does not name `default` would leave it passwordless
+# anyway, which is the trap this switch avoids.
+acl_enabled: "${ input.password != '' }"
+
+# The administrative account is optional: no password, no account.
+admin_account_enabled: "${ input.admin_password != '' }"
+
+# INVARIANT: what "administrative" means — every key, every channel, every command. An admin with
+# a narrowed set is a contradiction, so this is not an input; narrow the everyday account with
+# default_perms instead, or add a third user through `users`.
+admin_perms: "~* &* +@all"
+
+# ── TLS ────────────────────────────────────────────────────────────────────────
+# The whole tls dict is optional, so every read is guarded. tls_enabled is the single switch the
+# tasks and the flagfile template branch on. ca_enabled is separate because supplying a CA turns
+# client certificates from optional into mandatory.
+tls_enabled: "${ has(input.tls) && has(input.tls.enable) && input.tls.enable }"
+tls_ca_enabled: "${ vars.tls_enabled && has(input.tls.ca_ref) && input.tls.ca_ref != '' }"
+tls_dir:       "${ input.conf_dir + '/tls' }"
+tls_cert_path: "${ input.conf_dir + '/tls/dragonfly.crt' }"
+tls_key_path:  "${ input.conf_dir + '/tls/dragonfly.key' }"
+tls_ca_path:   "${ input.conf_dir + '/tls/ca.crt' }"
+
+# ── Bind addresses ─────────────────────────────────────────────────────────────
+# Dragonfly binds every interface when told nothing. Empty input.host means "this host's primary
+# IP": reachable for clients and replicas, and never everything at once. If the host reports no
+# primary IP we fall back to loopback — a local-only service is a safe failure, an open one is not.
+listen_host: >-
+  ${ input.host != ''
+       ? input.host
+       : (has(soulprint.self.network) && has(soulprint.self.network.primary_ip)
+            && soulprint.self.network.primary_ip != ''
+          ? soulprint.self.network.primary_ip
+          : '127.0.0.1') }
+
+# The console (metrics) port defaults to loopback: scraping is usually done by a local agent, and
+# /metrics answers without a password. Dragonfly calls this the admin port, hence the input names;
+# these vars say "console" to keep it apart from the administrative ACL account above.
+console_enabled:     "${ input.admin_port != 0 }"
+console_listen_host: "${ input.admin_bind != '' ? input.admin_bind : '127.0.0.1' }"
+
+# ── Readiness endpoint ─────────────────────────────────────────────────────────
+# Dragonfly serves /metrics on the console port once it is up and has loaded its snapshot. The
+# console stays plain HTTP even when the data port speaks TLS (the flagfile says so explicitly),
+# so this URL needs no scheme switch.
+readiness_url: >-
+  ${ 'http://' + vars.console_listen_host + ':' + string(input.admin_port) + '/metrics' }
+
+# ── Where snapshots go ─────────────────────────────────────────────────────────
+# Dragonfly takes one setting for both writing and loading snapshots, so this is either the local
+# data directory or an object-store URI — never both. With a URI the local directory still exists
+# and is still the process's working directory; it just holds no snapshot.
+snapshot_remote:  "${ input.snapshot_uri != '' }"
+snapshot_dir_eff: "${ input.snapshot_uri != '' ? input.snapshot_uri : input.data_dir }"
+
+# The S3 settings are an optional dict, so every read is guarded. s3_enabled is the switch the
+# flagfile branches on; the credentials travel through the environment file, not through here.
+s3_enabled:      "${ vars.snapshot_remote && input.snapshot_uri.startsWith('s3://') }"
+s3_endpoint:     "${ has(input.snapshot_s3) && has(input.snapshot_s3.endpoint) ? input.snapshot_s3.endpoint : '' }"
+s3_use_https:    "${ !has(input.snapshot_s3) || !has(input.snapshot_s3.use_https) || input.snapshot_s3.use_https }"
+s3_sign_payload: "${ !has(input.snapshot_s3) || !has(input.snapshot_s3.sign_payload) || input.snapshot_s3.sign_payload }"
+s3_ec2_metadata: "${ has(input.snapshot_s3) && has(input.snapshot_s3.ec2_metadata) && input.snapshot_s3.ec2_metadata }"
+s3_access_key:   "${ has(input.snapshot_s3) && has(input.snapshot_s3.access_key) ? input.snapshot_s3.access_key : '' }"
+s3_secret_key:   "${ has(input.snapshot_s3) && has(input.snapshot_s3.secret_key) ? input.snapshot_s3.secret_key : '' }"
+s3_region:       "${ has(input.snapshot_s3) && has(input.snapshot_s3.region) ? input.snapshot_s3.region : '' }"
+
+# ── Snapshot pruning ───────────────────────────────────────────────────────────
+# Only installed when a retention was asked for. Dragonfly writes one summary file plus one file
+# per shard per snapshot, all ending in .dfs (or .rdb when the Redis-compatible format is
+# selected through extra_flags) — matching on the extension covers every dbfilename spelling,
+# macros included, and touches nothing else in the directory.
+prune_enabled: "${ input.snapshot_retention_days > 0 }"
+
+# ── File modes and ownership ───────────────────────────────────────────────────
+# 0640 root:dragonfly — the flagfile and the ACL file (the ACL file holds password hashes, the
+# flagfile holds paths; the service reads both through its group, the world does not).
+config_file_mode: "0640"
+# 0600 root — the environment file with the passwords.
+env_file_mode: "0600"
+# 0600 dragonfly — the TLS material (only the service reads its own private key).
+pem_mode: "0600"
+# 0644 root — systemd units and logrotate rules.
+unit_file_mode: "0644"
+
+systemd_dir: /etc/systemd/system
+root_owner:  root
+root_group:  "${ vars.root_owner }"

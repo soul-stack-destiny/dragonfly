@@ -1,0 +1,22 @@
+# tasks/present.yml — the install pipeline, in order. main.yml gates this whole group on `ensure`,
+# so the files below carry no lifecycle condition of their own.
+#
+#   install.yml — download and unpack the release tarball;
+#   account.yml — the system account and the directories it owns;
+#   service.yml — the binary, the flagfile, the ACL file, the TLS material, the environment file,
+#                 the unit, the service itself and the readiness check;
+#   backup.yml  — the snapshot-pruning timer (only when a retention was asked for);
+#   extras.yml  — host tuning (huge pages, log rotation, kernel parameters).
+
+- include: install.yml
+
+- include: account.yml
+
+- include: service.yml
+
+# Included only when snapshot_retention_days is set; otherwise the plan carries no pruning steps
+# at all. It comes after service.yml because it prunes what the service writes.
+- include: backup.yml
+  when: "vars.prune_enabled"
+
+- include: extras.yml

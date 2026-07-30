@@ -1,0 +1,12 @@
+# tasks/main.yml — entry point for the dragonfly unit. `ensure` picks one of two whole pipelines:
+# install (present.yml and everything it includes) or teardown (remove.yml). A conditional
+# include is resolved before the plan is built, so the branch that is not taken leaves no tasks
+# behind at all.
+#
+# The unit sees only its own input plus this host's own facts (its IP, its architecture).
+
+- include: present.yml
+  when: "input.ensure != 'absent'"
+
+- include: remove.yml
+  when: "input.ensure == 'absent'"

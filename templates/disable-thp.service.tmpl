@@ -1,0 +1,20 @@
+{{- /*
+  A small oneshot unit that disables Transparent Huge Pages. With them on, the fork Dragonfly uses
+  to write a snapshot causes latency spikes and higher memory use. It runs early at boot and stays
+  "active" after writing `never` to sysfs. The leading dash on each ExecStart ignores kernels that
+  do not expose the files (huge pages are already off there).
+*/ -}}
+[Unit]
+Description=Disable Transparent Huge Pages (THP)
+DefaultDependencies=no
+After=sysinit.target local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+ExecStart=-/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+ExecStart=-/bin/sh -c 'echo 0 > /sys/kernel/mm/transparent_hugepage/khugepaged/defrag'
+
+[Install]
+WantedBy=multi-user.target

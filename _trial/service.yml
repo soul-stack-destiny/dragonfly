@@ -1,0 +1,16 @@
+# The test wrapper for the dragonfly unit.
+#
+# This is not a real service: the render-only test runner works through a scenario, so the unit
+# needs a minimal wrapper that declares it as a dependency and applies it. Keep it that way — no
+# real state logic belongs here.
+name: trial-dragonfly
+state_schema_version: 1
+description: >-
+  Render-only test harness for the dragonfly unit. Not a service — a wrapper whose single task
+  applies the unit, so its rendered plan can be asserted without a host.
+
+state_schema:
+  type: object
+
+destiny:
+  - { name: dragonfly, ref: v1.0.0 }

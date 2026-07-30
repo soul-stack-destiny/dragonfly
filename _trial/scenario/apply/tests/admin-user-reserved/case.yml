@@ -1,0 +1,23 @@
+# The administrative account cannot be called `default`.
+#
+# `default` is rendered from the password field, with the everyday permission rules; naming the
+# administrative account the same would write that user twice, and the second line would silently
+# widen the account applications connect as back to full access.
+#
+# The same rule covers the other collision: a name that also appears in `users`.
+name: dragonfly refuses an administrative account named default
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    version: "1.39.0"
+    password: "trial-password"
+    admin_user: "default"
+    admin_password: "trial-admin-password"
+  soulprint:
+    os:
+      arch: amd64
+    network:
+      primary_ip: 10.0.0.5
+
+expect_render_error: "admin_user cannot be `default`"

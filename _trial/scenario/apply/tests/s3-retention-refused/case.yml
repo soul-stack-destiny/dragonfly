@@ -1,0 +1,25 @@
+# A retention policy that would quietly do nothing.
+#
+# The prune timer runs `find` over a local directory. With the snapshots in a bucket that
+# directory is empty, so the timer would fire every day, delete nothing, and look exactly like a
+# working retention policy — until someone goes looking for the objects it never removed.
+#
+# Object stores have their own lifecycle rules for this, so the combination is refused at render
+# time instead.
+name: dragonfly refuses a local retention policy for snapshots kept in object storage
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    version: "1.39.0"
+    password: "trial-password"
+    snapshot_cron: "0 * * * *"
+    snapshot_uri: "s3://backups-trial/dragonfly/prod"
+    snapshot_retention_days: 7
+  soulprint:
+    os:
+      arch: amd64
+    network:
+      primary_ip: 10.0.0.5
+
+expect_render_error: "cannot reach an object store"

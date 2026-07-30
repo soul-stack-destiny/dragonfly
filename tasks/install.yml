@@ -1,0 +1,25 @@
+# tasks/install.yml — fetch the artifact and unpack it. Nothing here touches the running service:
+# the binary is laid out in service.yml, next to the restart that reacts to it (a register and the
+# step that reads it must live in the same file).
+#
+# The tarball name carries the machine architecture in uname spelling and NO version — the
+# version lives in the release path.
+
+# Download the release tarball. The checksum is optional: an empty sha256 means no verification,
+# a set one is checked BEFORE the file is published, so a bad download never reaches the disk.
+- name: Fetch the dragonfly release tarball
+  module: core.url.fetched
+  params:
+    url: "${ input.base_url + '/v' + input.version + '/dragonfly-' + vars.arch_suffix + '.tar.gz' }"
+    path: "${ vars.tarball_path }"
+    checksum: "${ input.sha256 }"
+    mode: "0644"
+    allow_private: "${ input.allow_private }"
+
+# Unpack it. Idempotent: the module records the archive's hash and does not unpack the same
+# archive twice. The archive holds the binary and a licence file at its root.
+- name: Extract the dragonfly release tarball
+  module: core.archive.extracted
+  params:
+    path: "${ vars.tarball_path }"
+    dest: "${ vars.extract_dir }"

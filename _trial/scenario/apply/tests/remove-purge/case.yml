@@ -1,0 +1,135 @@
+# The teardown, with the snapshots purged.
+#
+# ensure: absent replaces the whole install pipeline instead of layering a removal on top of it:
+# the install group is not skipped at run time, it is not in the plan at all (that is what
+# task_absent below proves). The teardown that takes its place reverses the install — stop and
+# disable, remove the units and tell systemd to forget them, remove the binary, the passwords,
+# the config and the certificates, then the account.
+#
+# The destructive part is separate: the two purge steps carry their own condition, so the same
+# plan serves both "uninstall but keep the snapshots" (the default) and "wipe it". This case
+# asserts both the steps and the condition guarding them.
+name: dragonfly renders a full teardown, with the data purge guarded by purge_data
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    ensure: absent
+    purge_data: true
+    # The version is still contract-required on the way out; the teardown ignores it and removes
+    # things by their fixed paths and names.
+    version: "1.39.0"
+    password: "trial-password"
+  soulprint:
+    os:
+      arch: amd64
+    network:
+      primary_ip: 10.0.0.5
+
+assert:
+  # The whole install pipeline is gone from the plan.
+  task_absent:
+    - module: core.url.fetched          # fetch the release tarball
+    - module: core.archive.extracted    # unpack it
+    - module: core.group.present        # the account
+    - module: core.user.present
+    - module: core.directory.present    # the data, log, config and TLS directories
+    - module: core.file.present         # the binary and the TLS material
+    - module: core.file.rendered        # flagfile, ACL file, environment file, units
+    - module: core.service.running
+    - module: core.service.restarted
+    - module: core.sysctl.applied
+    - module: core.http.probe
+
+  task_present:
+    # Stop, then disable: stopping does not touch autostart. The prune timer goes first so it
+    # cannot fire during the teardown.
+    - module: core.service.stopped
+      params_subset:
+        name: dragonfly-snapshot-prune.timer
+    - module: core.service.disabled
+      params_subset:
+        name: dragonfly-snapshot-prune.timer
+    - module: core.service.stopped
+      params_subset:
+        name: dragonfly
+    - module: core.service.disabled
+      params_subset:
+        name: dragonfly
+
+    # The unit files, then a systemd reload guarded on a removal having actually happened.
+    - module: core.file.absent
+      params_subset:
+        path: /etc/systemd/system/dragonfly.service
+    - module: core.file.absent
+      params_subset:
+        path: /etc/systemd/system/dragonfly-snapshot-prune.service
+    - module: core.file.absent
+      params_subset:
+        path: /etc/systemd/system/dragonfly-snapshot-prune.timer
+    - module: core.exec.run
+      params_subset:
+        cmd: systemctl
+        args: [daemon-reload]
+
+    # The binary, the environment file with the passwords, the flagfile and the ACL file.
+    - module: core.file.absent
+      params_subset:
+        path: /usr/local/bin/dragonfly
+    - module: core.file.absent
+      params_subset:
+        path: /etc/default/dragonfly
+    - module: core.file.absent
+      params_subset:
+        path: /etc/dragonfly/dragonfly.conf
+    - module: core.file.absent
+      params_subset:
+        path: /etc/dragonfly/users.acl
+
+    # The TLS material goes unconditionally: files left from an earlier TLS run must not survive
+    # an uninstall, and removing a file that is not there is a no-op.
+    - module: core.file.absent
+      params_subset:
+        path: /etc/dragonfly/tls/dragonfly.crt
+    - module: core.file.absent
+      params_subset:
+        path: /etc/dragonfly/tls/dragonfly.key
+    - module: core.file.absent
+      params_subset:
+        path: /etc/dragonfly/tls/ca.crt
+
+    # The host-tuning artefacts this unit wrote.
+    - module: core.file.absent
+      params_subset:
+        path: /etc/logrotate.d/dragonfly
+    - module: core.file.absent
+      params_subset:
+        path: /etc/sysctl.d/30-dragonfly.conf
+
+    # Directories that hold no data: removed plainly, so a non-empty one is left alone.
+    - module: core.directory.absent
+      params_subset:
+        path: /etc/dragonfly/tls
+    - module: core.directory.absent
+      params_subset:
+        path: /etc/dragonfly
+
+    # The two destructive steps, each carrying the purge_data guard.
+    - module: core.directory.absent
+      when: "input.purge_data"
+      params_subset:
+        path: /var/lib/dragonfly
+        recursive: true
+    - module: core.directory.absent
+      when: "input.purge_data"
+      params_subset:
+        path: /var/log/dragonfly
+        recursive: true
+
+    # The account this unit created: the user before its primary group.
+    - module: core.user.absent
+      params_subset:
+        name: dragonfly
+    - module: core.group.absent
+      params_subset:
+        name: dragonfly

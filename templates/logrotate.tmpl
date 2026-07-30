@@ -1,0 +1,17 @@
+{{- /*
+  logrotate rule for the Dragonfly logs. Dragonfly writes its own log files into the log
+  directory and names them itself, rather than logging to the journal, so the glob covers the
+  directory rather than one file. copytruncate is used because the process keeps its log file
+  open and does not reopen it on a signal, so copy-and-truncate is the safe way to rotate without
+  restarting it. Daily, keep a week, compress with a one-rotation delay.
+*/ -}}
+{{ .input.log_dir }}/*.log {
+  daily
+  rotate 7
+  size 512M
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}

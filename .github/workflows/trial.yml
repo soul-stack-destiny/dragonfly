@@ -1,0 +1,56 @@
+# CI for the dragonfly Soul Stack destiny: build the toolchain from the core and run the render
+# tests.
+#
+# The core ref is pinned to the RELEASE BRANCH rather than to a tag, and that is deliberate: this
+# unit declares destiny-level `validate:` rules (the cross-field invariants that make it refuse an
+# unauthenticated instance, a caller-declared `default` user, or TLS with no way to authenticate),
+# and the current release tag does not accept that key yet — the whole suite fails to load there
+# with `unknown field "validate"`. Move the pin to a release tag once the release that carries
+# those rules ships.
+name: trial
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  l0:
+    name: Render tests (hermetic, no docker)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the dragonfly destiny
+        uses: actions/checkout@v7
+        with:
+          path: dragonfly # the directory name must be the destiny name
+
+      - name: Checkout soul-stack (the toolchain source)
+        uses: actions/checkout@v7
+        with:
+          repository: souls-guild/soul-stack
+          ref: release/R5
+          path: soul-stack
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: soul-stack/keeper/go.mod
+          # This repo carries no Go code, so the module cache has to key off the core's checkout;
+          # without this the cache step looks for a go.sum here and warns that it found none.
+          cache-dependency-path: soul-stack/keeper/go.sum
+
+      - name: Build the toolchain from the core
+        working-directory: soul-stack
+        run: |
+          go build -o "$GITHUB_WORKSPACE/bin/soul-trial" ./keeper/cmd/soul-trial
+          go build -o "$GITHUB_WORKSPACE/bin/soul-lint" ./soul-lint/cmd/soul-lint
+
+      - name: Validate the manifests
+        run: |
+          "$GITHUB_WORKSPACE/bin/soul-lint" validate-destiny  dragonfly/destiny.yml
+          "$GITHUB_WORKSPACE/bin/soul-lint" validate-service  dragonfly/_trial/service.yml
+          "$GITHUB_WORKSPACE/bin/soul-lint" validate-scenario dragonfly/_trial/scenario/apply/main.yml
+
+      - name: Run the render tests
+        run: |
+          "$GITHUB_WORKSPACE/bin/soul-trial" run dragonfly/_trial

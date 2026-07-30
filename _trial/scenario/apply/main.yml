@@ -1,0 +1,230 @@
+# The test scenario: one task, applying the dragonfly unit. Its only job is to give the unit a
+# render-only test suite; the interesting part is in tests/<case>/case.yml.
+#
+# Every field a case needs to drive is declared here and forwarded verbatim, with the same
+# defaults as the unit's own contract — the wrapper adds no logic of its own.
+name: apply
+description: >-
+  Test harness: applies the dragonfly unit with the values a case provides. Not a service.
+
+input:
+  ensure:
+    type: string
+    default: present
+    enum: [present, absent]
+  purge_data:
+    type: boolean
+    default: false
+  version:
+    type: string
+    required: true
+    pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+  sha256:
+    type: string
+    default: ""
+    pattern: "^(sha256:[0-9a-f]{64})?$"
+  base_url:
+    type: string
+    default: https://github.com/dragonflydb/dragonfly/releases/download
+  allow_private:
+    type: boolean
+    default: false
+  bin_dir:
+    type: string
+    default: /usr/local/bin
+  user:
+    type: string
+    default: dragonfly
+  group:
+    type: string
+    default: dragonfly
+  conf_dir:
+    type: string
+    default: /etc/dragonfly
+  data_dir:
+    type: string
+    default: /var/lib/dragonfly
+  log_dir:
+    type: string
+    default: /var/log/dragonfly
+  host:
+    type: string
+    default: ""
+  port:
+    type: integer
+    default: 6379
+  http_console:
+    type: boolean
+    default: false
+  admin_port:
+    type: integer
+    default: 6380
+  admin_bind:
+    type: string
+    default: ""
+  maxclients:
+    type: integer
+    default: 64000
+  maxmemory:
+    type: string
+    default: ""
+  proactor_threads:
+    type: integer
+    default: 0
+  cache_mode:
+    type: boolean
+    default: false
+  snapshot_cron:
+    type: string
+    default: ""
+  dbfilename:
+    type: string
+    default: dump
+  snapshot_retention_days:
+    type: integer
+    default: 0
+  snapshot_uri:
+    type: string
+    default: ""
+  snapshot_s3:
+    type: object
+    default: {}
+    additional_properties: false
+    properties:
+      endpoint:     { type: string }
+      use_https:    { type: boolean }
+      sign_payload: { type: boolean }
+      ec2_metadata: { type: boolean }
+      region:       { type: string }
+      access_key:   { type: string, secret: true }
+      secret_key:   { type: string, secret: true }
+  password:
+    type: string
+    default: ""
+    secret: true
+  default_perms:
+    type: string
+    default: "~* &* +@all -@admin -@dangerous"
+  admin_user:
+    type: string
+    default: default_admin
+  admin_password:
+    type: string
+    default: ""
+    secret: true
+  users:
+    type: object
+    default: {}
+    properties: {}
+    additional_properties:
+      type: object
+      required: [perms, state, password]
+      additional_properties: false
+      properties:
+        perms:
+          type: string
+        state:
+          type: string
+          enum: [on, off]
+        password:
+          type: string
+          secret: true
+  allow_unauthenticated:
+    type: boolean
+    default: false
+  tls:
+    type: object
+    required: false
+    additional_properties: false
+    properties:
+      enable:   { type: boolean }
+      cert_ref: { type: string }
+      key_ref:  { type: string }
+      ca_ref:   { type: string }
+  tls_replication:
+    type: boolean
+    default: false
+  replica_of:
+    type: string
+    default: ""
+  master_user:
+    type: string
+    default: ""
+  master_auth:
+    type: string
+    default: ""
+    secret: true
+  extra_flags:
+    type: object
+    default: {}
+    properties: {}
+    additional_properties:
+      type: string
+  extra_env:
+    type: object
+    default: {}
+    properties: {}
+    additional_properties:
+      type: string
+  sysctl_settings:
+    type: object
+    default: {}
+    properties: {}
+    additional_properties:
+      type: string
+  version_check:
+    type: boolean
+    default: false
+  wait_ready:
+    type: boolean
+    default: true
+
+tasks:
+  - name: Apply the dragonfly unit
+    apply:
+      destiny: dragonfly
+      input:
+        ensure:                  "${ input.ensure }"
+        purge_data:              "${ input.purge_data }"
+        version:                 "${ input.version }"
+        sha256:                  "${ input.sha256 }"
+        base_url:                "${ input.base_url }"
+        allow_private:           "${ input.allow_private }"
+        bin_dir:                 "${ input.bin_dir }"
+        user:                    "${ input.user }"
+        group:                   "${ input.group }"
+        conf_dir:                "${ input.conf_dir }"
+        data_dir:                "${ input.data_dir }"
+        log_dir:                 "${ input.log_dir }"
+        host:                    "${ input.host }"
+        port:                    "${ input.port }"
+        http_console:            "${ input.http_console }"
+        admin_port:              "${ input.admin_port }"
+        admin_bind:              "${ input.admin_bind }"
+        maxclients:              "${ input.maxclients }"
+        maxmemory:               "${ input.maxmemory }"
+        proactor_threads:        "${ input.proactor_threads }"
+        cache_mode:              "${ input.cache_mode }"
+        snapshot_cron:           "${ input.snapshot_cron }"
+        dbfilename:              "${ input.dbfilename }"
+        snapshot_retention_days: "${ input.snapshot_retention_days }"
+        snapshot_uri:            "${ input.snapshot_uri }"
+        snapshot_s3:             "${ input.snapshot_s3 }"
+        password:                "${ input.password }"
+        default_perms:           "${ input.default_perms }"
+        admin_user:              "${ input.admin_user }"
+        admin_password:          "${ input.admin_password }"
+        users:                   "${ input.users }"
+        allow_unauthenticated:   "${ input.allow_unauthenticated }"
+        # An unset tls forwards as an empty dict: the unit reads it as "no TLS" (there is no
+        # enable key), and the wrapper does not have to branch.
+        tls:                     "${ default(input.tls, {}) }"
+        tls_replication:         "${ input.tls_replication }"
+        replica_of:              "${ input.replica_of }"
+        master_user:             "${ input.master_user }"
+        master_auth:             "${ input.master_auth }"
+        extra_flags:             "${ input.extra_flags }"
+        extra_env:               "${ input.extra_env }"
+        sysctl_settings:         "${ input.sysctl_settings }"
+        version_check:           "${ input.version_check }"
+        wait_ready:              "${ input.wait_ready }"

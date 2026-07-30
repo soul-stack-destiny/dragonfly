@@ -1,0 +1,154 @@
+# tasks/remove.yml — the teardown (ensure: absent), the install path in reverse.
+#
+# Every step below is a declarative *.stopped / *.disabled / *.absent, so it is a no-op when the
+# target is already gone: the teardown is safe to re-run and safe on a host where Dragonfly was
+# never installed.
+#
+# Order matters: stop and disable the services while their unit files still exist, then delete the
+# files, then tell systemd to forget them; delete files before the directories holding them;
+# delete the user before the group (the group is the user's primary group).
+#
+# The snapshots are kept unless purge_data says otherwise — see the guarded steps near the end.
+
+# ── The services ───────────────────────────────────────────────────────────────
+# Two states: stopping does not disable autostart, so both are needed. The prune timer goes first
+# so it cannot fire during the teardown.
+- name: Stop the dragonfly snapshot-prune timer
+  module: core.service.stopped
+  params:
+    name: "${ vars.prune_service_name + '.timer' }"
+
+- name: Disable the dragonfly snapshot-prune timer at boot
+  module: core.service.disabled
+  params:
+    name: "${ vars.prune_service_name + '.timer' }"
+
+- name: Stop dragonfly
+  module: core.service.stopped
+  params:
+    name: "${ vars.service_name }"
+
+- name: Disable dragonfly at boot
+  module: core.service.disabled
+  params:
+    name: "${ vars.service_name }"
+
+# The unit files, then a systemd reload — guarded on a removal actually having happened, so a
+# repeat run does nothing.
+- name: Remove the dragonfly systemd unit
+  module: core.file.absent
+  register: rm_unit
+  params:
+    path: "${ vars.systemd_dir + '/' + vars.service_name + '.service' }"
+
+- name: Remove the dragonfly snapshot-prune systemd unit
+  module: core.file.absent
+  register: rm_prune_unit
+  params:
+    path: "${ vars.systemd_dir + '/' + vars.prune_service_name + '.service' }"
+
+- name: Remove the dragonfly snapshot-prune systemd timer
+  module: core.file.absent
+  register: rm_prune_timer
+  params:
+    path: "${ vars.systemd_dir + '/' + vars.prune_service_name + '.timer' }"
+
+- name: Reload systemd after removing the dragonfly units
+  module: core.exec.run
+  onchanges: [rm_unit, rm_prune_unit, rm_prune_timer]
+  params:
+    cmd:  systemctl
+    args: [daemon-reload]
+
+# ── Binary and configuration ───────────────────────────────────────────────────
+- name: Remove the dragonfly binary
+  module: core.file.absent
+  params:
+    path: "${ vars.bin_path }"
+
+# The environment file holds the passwords — removed with the rest of the installation.
+- name: Remove the dragonfly environment file
+  module: core.file.absent
+  params:
+    path: "${ vars.env_path }"
+
+- name: Remove the dragonfly flagfile
+  module: core.file.absent
+  params:
+    path: "${ vars.config_path }"
+
+# The ACL file holds the password hashes.
+- name: Remove the dragonfly ACL file
+  module: core.file.absent
+  params:
+    path: "${ vars.acl_path }"
+
+# The TLS material: the three PEM files, then their directory. Unconditional — the files may exist
+# from an earlier run with TLS on, and removing a file that is not there is a no-op.
+- name: Remove the dragonfly TLS certificate
+  module: core.file.absent
+  params:
+    path: "${ vars.tls_cert_path }"
+
+- name: Remove the dragonfly TLS private key
+  module: core.file.absent
+  params:
+    path: "${ vars.tls_key_path }"
+
+- name: Remove the dragonfly TLS CA certificate
+  module: core.file.absent
+  params:
+    path: "${ vars.tls_ca_path }"
+
+# A plain, non-recursive removal: it clears the directory only when it is empty, so anything else
+# left in there is left alone rather than silently deleted.
+- name: Remove the dragonfly TLS directory
+  module: core.directory.absent
+  params:
+    path: "${ vars.tls_dir }"
+
+- name: Remove the dragonfly config directory
+  module: core.directory.absent
+  params:
+    path: "${ input.conf_dir }"
+
+# The host-tuning artefacts this unit wrote. The disable-thp unit is deliberately left alone: it
+# is not Dragonfly's, other services on the host may rely on it.
+- name: Remove the dragonfly logrotate rule
+  module: core.file.absent
+  params:
+    path: /etc/logrotate.d/dragonfly
+
+- name: Remove the dragonfly kernel parameter file
+  module: core.file.absent
+  params:
+    path: /etc/sysctl.d/30-dragonfly.conf
+
+# ── Data ───────────────────────────────────────────────────────────────────────
+# Everything below is DESTRUCTIVE and runs only with purge_data. Default false: the snapshots
+# survive an uninstall, so a later re-install comes back with the same dataset.
+- name: Purge the dragonfly data directory
+  module: core.directory.absent
+  when: "input.purge_data"
+  params:
+    path:      "${ input.data_dir }"
+    recursive: true
+
+- name: Purge the dragonfly log directory
+  module: core.directory.absent
+  when: "input.purge_data"
+  params:
+    path:      "${ input.log_dir }"
+    recursive: true
+
+# ── The account ────────────────────────────────────────────────────────────────
+# This unit created the account, so this unit removes it: the user first, then its primary group.
+- name: Remove the dragonfly user
+  module: core.user.absent
+  params:
+    name: "${ input.user }"
+
+- name: Remove the dragonfly group
+  module: core.group.absent
+  params:
+    name: "${ input.group }"
