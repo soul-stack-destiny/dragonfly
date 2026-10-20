@@ -1,15 +1,3 @@
-# An upgrade installed from an internal mirror, on arm64.
-#
-# Two things at once, because they belong together in practice: the version is the only thing that
-# changes the artifact (URL, staging paths, the file the binary is copied from), and a mirror is
-# where a host without internet access gets it. The mirror resolves to a private address, so the
-# download's address guard has to be lifted explicitly — that is the opt-out being exercised here.
-#
-# It also covers the other architecture: Dragonfly names its artifacts in uname spelling, so an
-# arm64 host fetches the aarch64 tarball and finds a binary of that name inside it.
-#
-# The checksum keeps its meaning across the mirror: it is verified before the file is published,
-# so a mirror serving the wrong bytes is rejected rather than installed.
 name: dragonfly renders an arm64 upgrade fetched from an internal mirror
 
 fixtures:
@@ -28,8 +16,6 @@ fixtures:
 
 assert:
   task_present:
-    # The mirror URL, the new version, the arm64 artifact, and the guard lifted for the private
-    # address.
     - module: core.url.fetched
       params_subset:
         url: https://mirror.internal/dragonfly/releases/download/v1.40.0/dragonfly-aarch64.tar.gz
@@ -42,8 +28,6 @@ assert:
         path: /tmp/dragonfly-1.40.0.tar.gz
         dest: /tmp/dragonfly-1.40.0
 
-    # The binary is copied from the newly unpacked directory: the installed file's content
-    # changes, which is what makes the reactive restart fire on an upgrade.
     - module: core.file.present
       params_subset:
         path: /usr/local/bin/dragonfly
@@ -54,7 +38,6 @@ assert:
       params_subset:
         name: dragonfly
 
-    # The bind address is this host's own primary IP — never every interface.
     - module: core.http.probe
       params_subset:
         url: http://127.0.0.1:6380/metrics

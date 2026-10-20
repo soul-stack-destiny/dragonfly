@@ -1,13 +1,5 @@
-# tasks/backup.yml — snapshot retention.
-#
-# Dragonfly writes snapshots but never removes them. With the default dbfilename each snapshot
-# overwrites the previous one, so there is nothing to prune and this whole file stays out of the
-# plan. With a {timestamp}-style name every snapshot is a NEW set of files (one summary plus one
-# per shard), and without pruning the directory grows until the volume fills — so when a
-# retention is asked for, a timer takes care of it.
-#
-# The prune runs as the service account, which owns the files, and its sandbox can write to
-# nothing but the data directory.
+# Dragonfly never deletes old snapshots. With a timestamped dbfilename this timer removes
+# the ones older than snapshot_retention_days.
 
 - name: Render the dragonfly snapshot-prune systemd unit
   module: core.file.rendered
@@ -27,8 +19,6 @@
     owner:    "${ vars.root_owner }"
     group:    "${ vars.root_group }"
 
-# The timer is what gets enabled and started; the service it triggers is a plain oneshot and is
-# never enabled on its own. systemd re-reads the units by itself when their files changed.
 - name: Ensure the dragonfly snapshot-prune timer is running and enabled at boot
   module: core.service.running
   params:

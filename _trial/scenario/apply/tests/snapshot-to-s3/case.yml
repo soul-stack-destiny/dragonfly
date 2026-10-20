@@ -1,19 +1,3 @@
-# Snapshots written straight to object storage, on S3-compatible storage with an explicit key
-# pair.
-#
-# Dragonfly uses one setting for both writing and loading snapshots, so pointing it at a bucket
-# makes that bucket the source of truth: the instance loads from there at startup and refuses to
-# come up if it cannot list it. That is worth knowing when reading this case — the local data
-# directory is still created and is still the process's working directory, it just holds no
-# snapshot.
-#
-# What this case pins down:
-#   - the bucket URI replaces the local path in the flagfile, while the data directory is still
-#     created (the unit does not stop managing the host just because the snapshots left it);
-#   - the endpoint and the transport switches reach the flagfile;
-#   - the credentials do NOT: they have no flags at all in Dragonfly, so they go into the 0600
-#     root-only environment file as the AWS variables, which is also the only channel that keeps
-#     them off a command line.
 name: dragonfly renders snapshots written to S3-compatible object storage
 
 fixtures:
@@ -38,8 +22,6 @@ fixtures:
 
 assert:
   task_present:
-    # The local data directory is still created: it stays the working directory, and dropping it
-    # would break the sandbox's writable path.
     - module: core.directory.present
       params_subset:
         path: /var/lib/dragonfly
@@ -47,9 +29,6 @@ assert:
         group: dragonfly
         mode: "0750"
 
-    # The flagfile, rendered against the context that carries the bucket and the transport
-    # switches. The credentials are deliberately absent from these vars — they are not in this
-    # file at all.
     - module: core.file.rendered
       params_subset:
         path: /etc/dragonfly/dragonfly.conf
@@ -66,7 +45,6 @@ assert:
             tls_cert_path: /etc/dragonfly/tls/dragonfly.crt
             tls_key_path: /etc/dragonfly/tls/dragonfly.key
             tls_ca_path: /etc/dragonfly/tls/ca.crt
-            snapshot_remote: true
             snapshot_dir_eff: "s3://backups-trial/dragonfly/prod"
             s3_enabled: true
             s3_endpoint: "minio.internal:9000"
@@ -133,7 +111,6 @@ assert:
               primary_ip: 10.0.0.5
           role: ""
 
-    # The credentials reach the environment file — 0600, root-only, never a command line.
     - module: core.file.rendered
       params_subset:
         path: /etc/default/dragonfly
@@ -143,9 +120,6 @@ assert:
         group: root
 
   task_absent:
-    # No retention timer: pruning runs `find` over a local directory and cannot reach a bucket,
-    # so the contract refuses the combination outright rather than installing a timer that would
-    # look like a policy and delete nothing.
     - module: core.file.rendered
       params_subset:
         path: /etc/systemd/system/dragonfly-snapshot-prune.timer

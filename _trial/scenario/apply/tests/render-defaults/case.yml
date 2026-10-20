@@ -1,30 +1,11 @@
-# The default install, rendered.
-#
-# Hermetic and render-only: it checks the plan the unit expands into, not a running Dragonfly.
-# Nothing is downloaded and the file templates are not executed here — the runner substitutes
-# their content and hands the render context along.
-#
-# What this case pins down:
-#   - the tarball URL carries the machine architecture in uname spelling and no version, while
-#     the release path does carry it;
-#   - the account is a real system user (the snapshots need a stable uid), and it owns the data
-#     and log directories;
-#   - the flagfile and the ACL file are 0640 root:dragonfly while the password goes into a 0600
-#     root-only environment file;
-#   - the service is enabled, a restart is wired reactively, and readiness is polled on the
-#     console port, which defaults to loopback;
-#   - with no retention asked for, no pruning steps exist at all.
 name: dragonfly renders the fetch/account/install/config/unit/service plan with defaults
 
 fixtures:
   default_destiny_source: "file://../../{name}"
   input:
     version: "1.39.0"
-    # Optional, but set here: with a hash the download is verified before it is published.
     sha256: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
     password: "trial-password"
-  # The synthetic host: its architecture picks the release artifact, its primary IP is the bind
-  # address.
   soulprint:
     os:
       arch: amd64
@@ -33,7 +14,6 @@ fixtures:
 
 assert:
   task_present:
-    # ── install.yml ────────────────────────────────────────────────────────────
     - module: core.url.fetched
       params_subset:
         url: https://github.com/dragonflydb/dragonfly/releases/download/v1.39.0/dragonfly-x86_64.tar.gz
@@ -47,7 +27,6 @@ assert:
         path: /tmp/dragonfly-1.39.0.tar.gz
         dest: /tmp/dragonfly-1.39.0
 
-    # ── account.yml ────────────────────────────────────────────────────────────
     - module: core.group.present
       params_subset:
         name: dragonfly
@@ -60,7 +39,6 @@ assert:
         group: dragonfly
         shell: /usr/sbin/nologin
 
-    # The snapshot directory — the one thing on this host worth backing up.
     - module: core.directory.present
       params_subset:
         path: /var/lib/dragonfly
@@ -75,7 +53,6 @@ assert:
         owner: dragonfly
         mode: "0750"
 
-    # The config directory is root-owned, group-readable by the service.
     - module: core.directory.present
       params_subset:
         path: /etc/dragonfly
@@ -83,8 +60,6 @@ assert:
         group: dragonfly
         mode: "0750"
 
-    # ── service.yml ────────────────────────────────────────────────────────────
-    # The binary comes out of the unpacked archive, where its name carries the architecture.
     - module: core.file.present
       params_subset:
         path: /usr/local/bin/dragonfly
@@ -93,7 +68,6 @@ assert:
         owner: root
         group: root
 
-    # The ACL file: password hashes, readable by the service through its group.
     - module: core.file.rendered
       params_subset:
         path: /etc/dragonfly/users.acl
@@ -110,7 +84,6 @@ assert:
         owner: root
         group: dragonfly
 
-    # The password lives here, in a 0600 root-only file, and nowhere else in plaintext.
     - module: core.file.rendered
       params_subset:
         path: /etc/default/dragonfly
@@ -136,7 +109,6 @@ assert:
       params_subset:
         name: dragonfly
 
-    # Readiness on the console port, which is loopback unless the caller says otherwise.
     - module: core.http.probe
       params_subset:
         url: http://127.0.0.1:6380/metrics
@@ -145,7 +117,6 @@ assert:
         allow_http: true
         allow_private: true
 
-    # ── extras.yml ─────────────────────────────────────────────────────────────
     - module: core.file.rendered
       params_subset:
         path: /etc/systemd/system/disable-thp.service
@@ -161,7 +132,6 @@ assert:
         path: /etc/logrotate.d/dragonfly
         template_content: "<present>"
 
-    # No kernel parameters were asked for, so the step carries an empty set.
     - module: core.sysctl.applied
       params_subset:
         filename: 30-dragonfly
@@ -170,19 +140,15 @@ assert:
         settings: {}
 
   task_absent:
-    # No TLS configured → no PEM files and no TLS directory.
     - module: core.directory.present
       params_subset:
         path: /etc/dragonfly/tls
-    # No retention asked for → the whole pruning group is missing from the plan, not merely
-    # skipped at run time.
     - module: core.file.rendered
       params_subset:
         path: /etc/systemd/system/dragonfly-snapshot-prune.service
     - module: core.file.rendered
       params_subset:
         path: /etc/systemd/system/dragonfly-snapshot-prune.timer
-    # Teardown steps belong to the other branch of the lifecycle.
     - module: core.service.stopped
     - module: core.user.absent
     - module: core.directory.absent

@@ -1,11 +1,3 @@
-# TLS without a way to authenticate is refused at render time.
-#
-# Dragonfly will not start with TLS enabled and no authentication configured — and an ACL file
-# does not count for that check, only a password or client certificates do. Left to itself, that
-# is a service that installs cleanly and then fails to come up.
-#
-# Here the caller asked for TLS on an instance it also declared open, so the refusal happens
-# while the plan is built, with a message that says which of the two to fix.
 name: dragonfly refuses TLS on an instance with no password and no client certificates
 
 fixtures:

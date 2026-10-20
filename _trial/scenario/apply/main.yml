@@ -1,8 +1,4 @@
-# The test scenario: one task, applying the dragonfly unit. Its only job is to give the unit a
-# render-only test suite; the interesting part is in tests/<case>/case.yml.
-#
-# Every field a case needs to drive is declared here and forwarded verbatim, with the same
-# defaults as the unit's own contract — the wrapper adds no logic of its own.
+# Test wrapper: passes every input straight to the destiny, with the same defaults.
 name: apply
 description: >-
   Test harness: applies the dragonfly unit with the values a case provides. Not a service.
@@ -218,8 +214,7 @@ tasks:
         admin_password:          "${ input.admin_password }"
         users:                   "${ input.users }"
         allow_unauthenticated:   "${ input.allow_unauthenticated }"
-        # An unset tls forwards as an empty dict: the unit reads it as "no TLS" (there is no
-        # enable key), and the wrapper does not have to branch.
+        # An unset tls goes through as an empty dict, which the destiny reads as no TLS.
         tls:                     "${ default(input.tls, {}) }"
         tls_replication:         "${ input.tls_replication }"
         replica_of:              "${ input.replica_of }"

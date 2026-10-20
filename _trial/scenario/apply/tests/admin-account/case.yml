@@ -1,14 +1,3 @@
-# The two system accounts.
-#
-# This is the shape the `redis` unit uses, and the reason `default` is not simply an admin here:
-#   default       — what applications connect as. It gets every key and channel and every ordinary
-#                   command, but not the administrative and dangerous ones;
-#   default_admin — the operator's account, with everything.
-#
-# The administrative account exists only when a password was given for it, and its name is the
-# caller's choice. What this case pins down is that both accounts, their passwords and the
-# permission rules actually reach the ACL template — the render context of that file is the only
-# place a render-only suite can see it, since the suite never executes a template.
 name: dragonfly renders the default and administrative accounts into the ACL file
 
 fixtures:
@@ -25,7 +14,6 @@ fixtures:
 
 assert:
   task_present:
-    # The ACL file is root-owned and group-readable by the service: it holds password hashes.
     - module: core.file.rendered
       params_subset:
         path: /etc/dragonfly/users.acl
@@ -92,9 +80,6 @@ assert:
               primary_ip: 10.0.0.5
           role: ""
 
-    # The environment file carries the `default` password and nothing else: Dragonfly needs it
-    # there to accept a TLS configuration at all, while the administrative account lives only in
-    # the ACL file.
     - module: core.file.rendered
       params_subset:
         path: /etc/default/dragonfly

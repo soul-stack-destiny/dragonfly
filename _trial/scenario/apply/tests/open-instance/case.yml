@@ -1,16 +1,3 @@
-# A deliberately unauthenticated instance on loopback, with the console and the readiness wait
-# turned off.
-#
-# Running Dragonfly with no password is a real choice — a single-tenant host, or an instance
-# reached only through a proxy that does the authentication. The unit refuses an instance with
-# neither a password nor an acknowledgement, so this case is the "yes, I meant it" path.
-#
-# It also pins down two things that follow from it:
-#   - with no password there is NO ACL file at all. That is deliberate: an ACL file that does not
-#     name `default` leaves it passwordless anyway, so writing one here would suggest a lockdown
-#     that is not there;
-#   - with the console port disabled there is nothing for the readiness check to poll, so the
-#     check keeps its slot in the plan carrying its guard rather than silently dropping it.
 name: dragonfly renders an acknowledged unauthenticated instance with no ACL file and no readiness wait
 
 fixtures:
@@ -28,14 +15,11 @@ fixtures:
 
 assert:
   task_present:
-    # The service still comes up and is still enabled — only authentication is absent.
     - module: core.service.running
       params_subset:
         name: dragonfly
         enabled: true
 
-    # The environment file is rendered either way; with no password set it simply carries no
-    # password line (an empty one would mean "the password is the empty string").
     - module: core.file.rendered
       params_subset:
         path: /etc/default/dragonfly
@@ -44,11 +28,7 @@ assert:
         group: root
 
   task_absent:
-    # No password → no ACL file.
     - module: core.file.rendered
       params_subset:
         path: /etc/dragonfly/users.acl
-    # The console is off, so the readiness check has nothing to do: a task whose condition is
-    # false keeps its slot in the plan but is rendered without parameters. Remove the condition
-    # from the unit and this assertion fails, which is the point of it.
     - module: core.http.probe

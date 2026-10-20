@@ -1,8 +1,3 @@
-{{- /*
-  Runs the snapshot prune once a day. Persistent means a host that was off at the scheduled time
-  catches up on the next boot instead of skipping a day, and the randomised delay keeps a fleet
-  of hosts from all pruning at the same instant.
-*/ -}}
 [Unit]
 Description=Daily prune of Dragonfly snapshots older than {{ .input.snapshot_retention_days }} days
 

@@ -1,9 +1,5 @@
-# tasks/extras.yml — host tuning that an in-memory datastore wants on any host.
-#
-# Transparent huge pages cause latency spikes during the fork Dragonfly uses to write a snapshot,
-# so they are turned off through a small oneshot unit. Log rotation is installed because Dragonfly
-# writes its own log files rather than to the journal. Kernel parameters are not guessed here:
-# pass what this host needs in sysctl_settings (an empty map, the default, leaves the host alone).
+# Host tuning: transparent huge pages off (latency spikes on snapshots), log rotation, and
+# whatever kernel parameters the caller passes in sysctl_settings.
 
 - name: Render the disable-thp systemd unit
   module: core.file.rendered
@@ -14,8 +10,6 @@
     owner:    "${ vars.root_owner }"
     group:    "${ vars.root_group }"
 
-# A oneshot unit that stays "active" after it has run; systemd re-reads it by itself when the
-# file changed.
 - name: Ensure disable-thp is running and enabled at boot
   module: core.service.running
   params:
@@ -31,8 +25,7 @@
     owner:    "${ vars.root_owner }"
     group:    "${ vars.root_group }"
 
-# ignore_failures skips a parameter that is read-only in this environment (some values inside a
-# container) instead of failing the whole run.
+# ignore_failures: some parameters are read-only inside a container.
 - name: Apply the dragonfly kernel parameters
   module: core.sysctl.applied
   params:

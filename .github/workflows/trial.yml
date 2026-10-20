@@ -1,8 +1,5 @@
-# CI for the dragonfly Soul Stack destiny: build the toolchain from the core and run the render
-# tests.
-#
-# The core ref is `main`, not the release tag: v0.1.0-beta.1 predates destiny-level `validate:`
-# and the current input dialect, and the suite does not load there.
+# Build soul-trial and soul-lint from the core and run the render tests. The core's release
+# tag is older than this destiny's input format, hence main.
 name: trial
 
 on:
@@ -31,8 +28,7 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: soul-stack/keeper/go.mod
-          # This repo carries no Go code, so the module cache has to key off the core's checkout;
-          # without this the cache step looks for a go.sum here and warns that it found none.
+          # No Go code in this repo: key the cache off the core's go.sum.
           cache-dependency-path: soul-stack/keeper/go.sum
 
       - name: Build the toolchain from the core

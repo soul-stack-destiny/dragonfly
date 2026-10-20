@@ -1,9 +1,3 @@
-# The guard against an accidentally open datastore.
-#
-# A Dragonfly with no password lets anyone who can reach the port read and write every key. The
-# unit therefore refuses to render unless the caller either sets a password or says out loud that
-# an unauthenticated instance is intended. This case is the refusal: it passes neither, and the
-# render must abort before anything reaches a host.
 name: dragonfly refuses to render without a password or an explicit acknowledgement
 
 fixtures:

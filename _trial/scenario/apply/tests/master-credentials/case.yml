@@ -1,7 +1,4 @@
-# A master that carries replication credentials. A Sentinel failover demotes the old master with a
-# bare REPLICAOF and sends no credentials, so master_user/master_auth must render without
-# replica_of. This case is red if the unit refuses them there; it cannot see the flagfile line
-# itself, since the suite never executes a template — that line was checked against a running 2.0.2.
+# After a failover the old master becomes a replica, so it needs these credentials too.
 name: dragonfly renders replication credentials on a master
 
 fixtures:
@@ -41,7 +38,6 @@ assert:
             tls_cert_path: /etc/dragonfly/tls/dragonfly.crt
             tls_key_path: /etc/dragonfly/tls/dragonfly.key
             tls_ca_path: /etc/dragonfly/tls/ca.crt
-            snapshot_remote: false
             snapshot_dir_eff: /var/lib/dragonfly
             s3_enabled: false
             s3_endpoint: ""

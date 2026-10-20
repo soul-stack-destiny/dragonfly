@@ -1,21 +1,4 @@
-{{- /*
-  The systemd unit for Dragonfly. Values are read from the unit's input (.input.name) and its own
-  fixed values (.vars.name).
-
-  The service account is a real, stable system user, not a transient one: the snapshots outlive
-  restarts and upgrades, and a changing uid would leave the process unable to read what it wrote.
-
-  The passwords are NOT here. This file is world-readable, as systemd units are; the secrets live
-  in the 0600 root-only environment file loaded through EnvironmentFile, which systemd reads as
-  root before the process starts.
-
-  Dragonfly runs in the foreground and does not signal readiness back to systemd, so the type is
-  simple and readiness is established by the unit's own check against the console port.
-
-  The sandbox follows the house rule "security first": the filesystem is read-only apart from the
-  two directories this service owns, no privileges can be gained, and the capability set is
-  narrowed to the one Dragonfly actually uses to raise its own resource limits.
-*/ -}}
+{{- /* systemd unit for Dragonfly. Passwords come from the root-only EnvironmentFile, not from here. */ -}}
 [Unit]
 Description=Dragonfly in-memory datastore
 Documentation=https://www.dragonflydb.io/docs
@@ -27,20 +10,16 @@ Type=simple
 User={{ .input.user }}
 Group={{ .input.group }}
 WorkingDirectory={{ .input.data_dir }}
-# Passwords and any extra environment overrides, from a 0600 root-only file.
 EnvironmentFile={{ .vars.env_path }}
 ExecStart={{ .vars.bin_path }} --flagfile {{ .vars.config_path }}
 SyslogIdentifier=dragonfly
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM
-# Shutting down can mean writing a snapshot of the whole dataset, which on a large instance takes
-# a while; the limit is generous but finite, so a wedged process cannot block a reboot forever.
+# Shutdown may write a snapshot of the whole dataset.
 TimeoutStopSec=1800
-# Many client connections and io_uring rings both consume descriptors.
 LimitNOFILE=262144
 
-# Sandbox.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -49,8 +28,6 @@ PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-# AF_UNIX is here because Dragonfly can serve a unix socket (unixsocket through extra_flags);
-# without it that socket would fail to bind.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
@@ -58,10 +35,9 @@ RestrictNamespaces=yes
 LockPersonality=yes
 ProtectProc=invisible
 MemoryDenyWriteExecute=yes
-# Dragonfly raises its own resource limits at startup; nothing else in the set is needed.
+# Dragonfly raises its own resource limits at startup.
 CapabilityBoundingSet=CAP_SYS_RESOURCE
 UMask=0027
-# The only writable paths: the snapshot directory and the log directory.
 ReadWritePaths={{ .input.data_dir }} {{ .input.log_dir }}
 
 [Install]

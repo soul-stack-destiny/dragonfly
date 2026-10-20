@@ -1,32 +1,4 @@
-{{- /*
-  users.acl — the ACL file referenced by the flagfile. One line per user:
-
-    user <name> <state> #<sha256 of the password> <permission rules>
-
-  Passwords are written as SHA-256 hashes, never in plaintext, and the line order is stable
-  across runs (the users map is iterated in sorted order).
-
-  Two system accounts come first: `default`, which applications connect as, and the
-  administrative one, which exists only when a password was given for it. Everything the caller
-  declared in `users` follows.
-
-  DO NOT ADD COMMENT LINES HERE. The hash marker is a hash, so a line starting with one is read
-  as a malformed user and Dragonfly rejects the WHOLE file — see below for what that costs.
-  Blank lines are fine.
-
-  The `default` user is always here and always enabled, because of how Dragonfly treats this
-  file. Three behaviours make that the only safe shape, and all three fail QUIETLY — the file is
-  dropped with a single line in the log, the service starts, and `default` is left as the
-  built-in passwordless account with full access:
-
-    - with an ACL file configured, Dragonfly takes its entire user list from it. If `default`
-      is not named here, no password given elsewhere closes it.
-    - a `default` line that disables the user (state off) voids the whole file.
-    - so does any line the parser does not understand, a comment among them.
-
-  So `default` carries a password and its own permission rules, and the unit refuses to render at
-  all when no password was given and the caller has not asked for an open instance.
-*/ -}}
+{{- /* One line per user, password as a sha256 hash. No comment lines here: Dragonfly would reject the whole file. */ -}}
 user default on #{{ .input.password | sha256sum }} {{ .input.default_perms }}
 {{- if .vars.admin_account_enabled }}
 user {{ .input.admin_user }} on #{{ .input.admin_password | sha256sum }} {{ .vars.admin_perms }}

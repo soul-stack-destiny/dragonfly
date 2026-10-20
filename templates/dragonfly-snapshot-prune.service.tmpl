@@ -1,19 +1,4 @@
-{{- /*
-  A oneshot unit that deletes snapshot files older than the configured retention. It exists
-  because Dragonfly writes snapshots but never removes them: with a dbfilename carrying a
-  timestamp macro, every snapshot is a new set of files and the directory grows until the volume
-  is full.
-
-  It matches on the snapshot extensions rather than on the file name, so it covers every
-  dbfilename spelling, macros included, and leaves anything else in the directory alone. A
-  snapshot is one summary file plus one file per shard, all written at the same moment, so they
-  age out together. The two extensions get one command each rather than one command with a
-  grouped expression: systemd strips the backslashes that grouping needs, and the shell would
-  then be handed a syntax error.
-
-  It runs as the service account — the owner of those files — under the same kind of sandbox as
-  the daemon, with the snapshot directory as its only writable path.
-*/ -}}
+{{- /* Deletes snapshot files older than snapshot_retention_days. */ -}}
 [Unit]
 Description=Prune Dragonfly snapshots older than {{ .input.snapshot_retention_days }} days
 Documentation=https://www.dragonflydb.io/docs
@@ -25,7 +10,6 @@ Group={{ .input.group }}
 ExecStart=/bin/sh -c 'find {{ .input.data_dir }} -maxdepth 1 -type f -name "*.dfs" -mtime +{{ .input.snapshot_retention_days }} -delete'
 ExecStart=/bin/sh -c 'find {{ .input.data_dir }} -maxdepth 1 -type f -name "*.rdb" -mtime +{{ .input.snapshot_retention_days }} -delete'
 
-# Sandbox.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

@@ -7,18 +7,10 @@ description: >-
   timer. Higher-level orchestration (who is master, failover, rolling upgrades) is up to whatever
   calls this — the unit just brings a single host to the desired state.
 
-# The task list is in tasks/main.yml. Snapshots live under data_dir and survive a re-install
-# unless you ask for them to be purged.
-#
-# Sentinel is deliberately NOT here: Dragonfly ships no sentinel daemon of its own. Dragonfly
-# speaks the Redis wire protocol, so a Redis Sentinel watching a Dragonfly master works — deploy
-# it from the `redis` unit with its data plane switched off (deploy_redis: false).
-#
-# Metrics need no exporter either: Dragonfly serves Prometheus metrics itself, at /metrics on its
-# HTTP console (see admin_port / http_console below).
+# Sentinel is not part of this unit: deploy it with the redis destiny and deploy_redis: false.
 
 input:
-  # ── Lifecycle ──────────────────────────────────────────────────────────────
+  # Lifecycle
   ensure:
     type: string
     required: false
@@ -38,10 +30,7 @@ input:
       Default false — the snapshots survive a re-install, so the next install comes back with the
       same dataset. Destructive; no effect when present.
 
-  # ── Where the binary comes from ────────────────────────────────────────────
-  # Dragonfly publishes one tarball per architecture in its GitHub releases. The archive holds a
-  # single binary named after the architecture (dragonfly-x86_64 / dragonfly-aarch64) plus a
-  # licence file; the architecture is derived from this host's own facts (see vars.yml).
+  # Release download
   version:
     type: string
     required: true
@@ -78,7 +67,7 @@ input:
       Allow the download to reach a private-network (RFC1918/loopback) address — needed when
       base_url resolves to an internal mirror. Default false (private addresses are blocked).
 
-  # ── Placement ──────────────────────────────────────────────────────────────
+  # Placement
   bin_dir:
     type: string
     required: false
@@ -132,7 +121,7 @@ input:
       Directory Dragonfly writes its log files into (it names the files itself). A logrotate rule
       for the directory is installed alongside. Default /var/log/dragonfly.
 
-  # ── The network surface ────────────────────────────────────────────────────
+  # Network
   host:
     type: string
     required: false
@@ -185,7 +174,7 @@ input:
     min: 1
     description: Maximum number of concurrent client connections.
 
-  # ── Memory and threads ─────────────────────────────────────────────────────
+  # Memory and threads
   maxmemory:
     type: string
     required: false
@@ -214,9 +203,7 @@ input:
       Behave like a cache: start evicting entries as the dataset approaches maxmemory instead of
       refusing writes. Default false — a datastore that silently drops data is a decision.
 
-  # ── Snapshots (what there is to back up) ───────────────────────────────────
-  # Dragonfly keeps its dataset in memory; the only thing on disk worth saving is the snapshot set
-  # under data_dir. Snapshotting is off unless you schedule it here.
+  # Snapshots
   snapshot_cron:
     type: string
     required: false
@@ -252,12 +239,7 @@ input:
       snapshots only — an object store has its own lifecycle rules, so this and snapshot_uri are
       mutually exclusive.
 
-  # ── Snapshots straight to object storage ───────────────────────────────────
-  # Dragonfly writes and READS its snapshots through the same setting, so pointing it at a bucket
-  # makes that bucket the source of truth: the instance loads from there at startup, and refuses
-  # to start if it cannot list the bucket. That is fail-closed — bad credentials surface as a
-  # service that does not come up, caught by the readiness check, rather than as backups that
-  # silently never happen.
+  # Snapshots in object storage. Dragonfly also loads from there at startup.
   snapshot_uri:
     type: string
     required: false
@@ -298,14 +280,7 @@ input:
         type: string
         secret: true
 
-  # ── Authentication ─────────────────────────────────────────────────────────
-  # Two system accounts, the same split the `redis` unit uses:
-  #   default       — what applications connect as, with data access but no administrative
-  #                   commands (see default_perms);
-  #   default_admin — the operator's account, with everything (see admin_user/admin_password).
-  # Anything else goes in `users`. The passwords are secrets and are never written into the
-  # flagfile: they go into the ACL file as SHA-256 hashes, and the `default` one additionally into
-  # a 0600 root-only environment file, because Dragonfly needs it there to accept TLS at all.
+  # Accounts: `default` for applications, the admin user for the operator, the rest in users.
   password:
     type: string
     required: false
@@ -386,14 +361,7 @@ input:
       port can read and write every key. The unit refuses to render without either a password or
       this explicit opt-out, so an open datastore is always a decision, never an oversight.
 
-  # ── TLS ────────────────────────────────────────────────────────────────────
-  # Omit the whole dict for plaintext. With enable, cert_ref and key_ref are Vault paths (form
-  # "<mount>/<path>#<field>") to the server certificate and its private key; the unit reads them
-  # and writes the PEM files under <conf_dir>/tls (private key 0600). The PEM never reaches a
-  # command line or a log.
-  #
-  # Dragonfly serves TLS on the SAME data port — there is no separate TLS port, and no way to
-  # serve plaintext and TLS at once. Turning TLS on therefore closes the plaintext port.
+  # TLS is served on the data port, so enabling it closes plaintext.
   tls:
     type: object
     required: false
@@ -421,13 +389,8 @@ input:
       Speak TLS on the replication link as well (this instance as a replica connecting to its
       master, and its own replicas connecting here). Requires tls.enable.
 
-  # ── Replication ────────────────────────────────────────────────────────────
-  # Optional and per-host: this unit sets who this instance replicates from at startup. Deciding
-  # who is master, and promoting one, is orchestration and belongs to whatever calls this.
-  #
-  # The credentials are independent of replica_of: a master needs them too. A Sentinel failover
-  # turns the old master into a replica with a bare REPLICAOF and sends no credentials, so a node
-  # that does not already carry them cannot authenticate to its new master.
+  # Replication. master_user/master_auth belong on every node: after a failover the old master
+  # becomes a replica.
   replica_of:
     type: string
     required: false
@@ -456,7 +419,7 @@ input:
       master_user. Masked in logs; rendered into the 0600 environment file, never into the
       flagfile.
 
-  # ── Passthrough ────────────────────────────────────────────────────────────
+  # Passthrough
   extra_flags:
     type: object
     required: false
@@ -487,7 +450,7 @@ input:
     additional_properties:
       type: string
 
-  # ── Host tuning ────────────────────────────────────────────────────────────
+  # Host tuning
   sysctl_settings:
     type: object
     required: false
@@ -508,7 +471,7 @@ input:
       Let Dragonfly phone home daily to check for new releases. Default false (Dragonfly's own
       default is true) — an installed service should not talk to its vendor unless you ask it to.
 
-  # ── Readiness ──────────────────────────────────────────────────────────────
+  # Readiness
   wait_ready:
     type: boolean
     required: false
@@ -518,14 +481,11 @@ input:
       here instead of in the next step that talks to the datastore. Needs admin_port; with the
       console disabled there is nothing to poll and the check is skipped.
 
-# Cross-field invariants, checked before anything is sent to the host.
+# Checked before anything reaches the host.
 validate:
   - that: "input.password != '' || input.allow_unauthenticated"
     message: "set password, or acknowledge an open instance with allow_unauthenticated: true"
-  # The `default` user is rendered from `password`. Declaring it here would either duplicate that
-  # line or — with state: off — make Dragonfly reject the WHOLE ACL file with nothing but a log
-  # warning, leaving the built-in passwordless `default` in place. That failure is silent, so the
-  # rule is a hard refusal.
+  # `default` comes from `password`; a second or disabled `default` breaks the ACL file.
   - that: "!('default' in input.users)"
     message: "do not declare a `default` user in users: it is rendered from the password field (and a disabled `default` would void the entire ACL file)"
   - that: "input.admin_user != 'default'"
@@ -536,8 +496,7 @@ validate:
     message: "admin_password requires password: the ACL file is only written on an instance that has one"
   - that: "!has(input.tls) || !has(input.tls.enable) || !input.tls.enable || (has(input.tls.cert_ref) && input.tls.cert_ref != '' && has(input.tls.key_ref) && input.tls.key_ref != '')"
     message: "tls.enable requires tls.cert_ref and tls.key_ref (Vault paths to the server certificate and its private key)"
-  # Dragonfly refuses to start with TLS on and no way to authenticate a client — and an ACL file
-  # alone does not count for it. Either a password or client certificates (a CA) must be there.
+  # Dragonfly will not start with TLS and no way to authenticate clients.
   - that: "!has(input.tls) || !has(input.tls.enable) || !input.tls.enable || input.password != '' || (has(input.tls.ca_ref) && input.tls.ca_ref != '')"
     message: "tls.enable requires either a password or tls.ca_ref (client certificates): Dragonfly refuses to start with TLS and no authentication"
   - that: "!input.tls_replication || (has(input.tls) && has(input.tls.enable) && input.tls.enable)"
@@ -546,16 +505,13 @@ validate:
     message: "admin_port must differ from port"
   - that: "input.snapshot_retention_days == 0 || input.snapshot_cron != ''"
     message: "snapshot_retention_days without snapshot_cron has nothing to prune"
-  # The prune timer runs `find` over a local directory. With snapshots in a bucket it would run
-  # every day over an empty directory and delete nothing, while looking like a retention policy.
+  # The prune timer only sees local files.
   - that: "input.snapshot_retention_days == 0 || input.snapshot_uri == ''"
     message: "snapshot_retention_days prunes local files and cannot reach an object store: use the bucket's own lifecycle rules with snapshot_uri"
   - that: "input.snapshot_uri == '' || input.snapshot_cron != ''"
     message: "snapshot_uri without snapshot_cron never writes anything to the bucket"
   - that: "!has(input.snapshot_s3) || size(input.snapshot_s3) == 0 || input.snapshot_uri != ''"
     message: "snapshot_s3 settings are only meaningful with snapshot_uri"
-  # Either the host's own instance role or an explicit key pair — asking for both hides which one
-  # is actually in use.
   - that: "!has(input.snapshot_s3) || !has(input.snapshot_s3.ec2_metadata) || !input.snapshot_s3.ec2_metadata || !has(input.snapshot_s3.access_key) || input.snapshot_s3.access_key == ''"
     message: "snapshot_s3.ec2_metadata takes credentials from the instance role: do not also pass access_key"
   - that: "!has(input.snapshot_s3) || !has(input.snapshot_s3.access_key) || input.snapshot_s3.access_key == '' || (has(input.snapshot_s3.secret_key) && input.snapshot_s3.secret_key != '')"

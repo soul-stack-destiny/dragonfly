@@ -17,9 +17,8 @@ file, one port for TLS and plaintext, no sentinel daemon, built-in metrics.
 - **No secrets in the repo.** Passwords are passed in and written as sha256 hashes in the ACL
   file, plaintext only into a 0600 root-only environment file. TLS material is read from Vault by
   path — the unit gets paths, not the secrets.
-- **Comments are short and load-bearing.** Explain a non-obvious constraint or a `# why`; don't
-  narrate the obvious. Several comments here record a Dragonfly behaviour that fails *silently* —
-  those are the ones to keep.
+- **Comments are few and short.** One line on what a step does when its name does not say it;
+  the reasons behind the design live in this file and the README, not in the code.
 - **This unit sees only its own input** plus this host's own facts (its IP, its architecture). It
   doesn't know about other hosts. That's what makes it reusable and testable on its own.
 
@@ -116,8 +115,7 @@ Two more, less dangerous but easy to trip over:
 - **Everything must be idempotent** — safe to re-apply. Any imperative step (the teardown's
   `daemon-reload`) is guarded so it only runs when something actually changed.
 - **Flagfile order matters.** Dragonfly takes the LAST occurrence of a repeated flag, so the
-  `extra_flags` passthrough is rendered after everything else, on purpose. Blank lines and
-  `#` comments in a flagfile are ignored, which is why the rendered file carries its own notes.
+  `extra_flags` passthrough is rendered after everything else, on purpose.
 - **Watch systemd's own escaping in `ExecStart`.** Backslash-escaped shell grouping (`\(`) is
   eaten by systemd before the shell sees it; the snapshot prune uses two plain commands instead.
   `systemd-analyze verify` on the rendered unit catches this class.
@@ -184,8 +182,7 @@ core, validate the manifests, run the suite.
 - Don't add a top-level `version:` field.
 - Don't write `default` into the ACL file as anything other than an enabled user with a password
   hash, and don't let a caller declare it or the admin name (see the behaviours above).
-- Don't put comment lines in the ACL file — they void it. The flagfile is the opposite: comments
-  and blank lines are ignored there, which is why the rendered config explains itself.
+- Don't put comment lines in the ACL file — they void it.
 - Don't give the administrative account narrowed permissions (`vars.admin_perms`) — an admin with
   a partial set is a contradiction. Narrow `default_perms` instead, or add a third user.
 - Don't put a secret in the flagfile or the systemd unit — both are readable beyond root. Secrets

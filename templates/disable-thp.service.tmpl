@@ -1,9 +1,4 @@
-{{- /*
-  A small oneshot unit that disables Transparent Huge Pages. With them on, the fork Dragonfly uses
-  to write a snapshot causes latency spikes and higher memory use. It runs early at boot and stays
-  "active" after writing `never` to sysfs. The leading dash on each ExecStart ignores kernels that
-  do not expose the files (huge pages are already off there).
-*/ -}}
+{{- /* Turns transparent huge pages off at boot. The leading dash skips kernels without these files. */ -}}
 [Unit]
 Description=Disable Transparent Huge Pages (THP)
 DefaultDependencies=no

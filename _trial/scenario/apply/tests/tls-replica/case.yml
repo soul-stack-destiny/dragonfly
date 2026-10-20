@@ -1,20 +1,7 @@
-# A TLS replica of another instance, with an extra ACL user and a passthrough flag.
-#
-# What this case pins down:
-#   - the certificate and key are read from Vault by path and written 0600 to the service account
-#     — the PEM content reaches the file, never a command line;
-#   - no CA was passed, so no CA file is written: supplying one would make client certificates
-#     mandatory, which is not what ordinary server-side TLS means;
-#   - the replication password is a secret and goes into the 0600 environment file, while the
-#     replica's master and user land in the flagfile;
-#   - the flagfile is rendered against the full context, which is the proof that every input
-#     value actually reaches the file that is written on the host.
 name: dragonfly renders a TLS replica with an extra ACL user
 
 fixtures:
   default_destiny_source: "file://../../{name}"
-  # The secrets the unit reads by path. In production these are real Vault paths; here they are
-  # provided by the case, so the render stays hermetic.
   vault:
     secret/pki/cache:
       cert: "-----BEGIN CERTIFICATE-----\ntrial-cert\n-----END CERTIFICATE-----"
@@ -46,7 +33,6 @@ fixtures:
 
 assert:
   task_present:
-    # The TLS directory is the service account's, so only Dragonfly can read the key sitting in it.
     - module: core.directory.present
       params_subset:
         path: /etc/dragonfly/tls
@@ -54,8 +40,6 @@ assert:
         group: dragonfly
         mode: "0750"
 
-    # Each PEM file: the content comes from Vault, resolved before the plan leaves the control
-    # plane.
     - module: core.file.present
       params_subset:
         path: /etc/dragonfly/tls/dragonfly.crt
@@ -71,9 +55,6 @@ assert:
         mode: "0600"
         owner: dragonfly
 
-    # The flagfile, rendered against the full context. vars carries the unit's own fixed values
-    # (the paths, the resolved bind addresses and the switches the template branches on), input
-    # carries the effective contract after defaults.
     - module: core.file.rendered
       params_subset:
         path: /etc/dragonfly/dragonfly.conf
@@ -90,7 +71,6 @@ assert:
             tls_cert_path: /etc/dragonfly/tls/dragonfly.crt
             tls_key_path: /etc/dragonfly/tls/dragonfly.key
             tls_ca_path: /etc/dragonfly/tls/ca.crt
-            snapshot_remote: false
             snapshot_dir_eff: /var/lib/dragonfly
             s3_enabled: false
             s3_endpoint: ""
@@ -159,15 +139,11 @@ assert:
               primary_ip: 10.0.0.6
           role: ""
 
-    # Readiness stays plain HTTP on loopback even with TLS on the data port — the flagfile keeps
-    # the console out of TLS on purpose, so a local scraper needs no certificate.
     - module: core.http.probe
       params_subset:
         url: http://127.0.0.1:6380/metrics
 
   task_absent:
-    # No CA was passed, so no CA file is written: with one, Dragonfly would demand a client
-    # certificate from every connection.
     - module: core.file.present
       params_subset:
         path: /etc/dragonfly/tls/ca.crt
