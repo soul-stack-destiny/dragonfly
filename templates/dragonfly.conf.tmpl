@@ -93,9 +93,11 @@
 
 # Replication, as of startup. A later REPLICAOF over the wire wins until the process restarts.
 --replicaof={{ .input.replica_of }}
-{{- if .input.master_user }}
---masteruser={{ .input.master_user }}
 {{- end }}
+{{- if .input.master_user }}
+
+# The account this instance replicates as, also on a master: after a failover it is a replica.
+--masteruser={{ .input.master_user }}
 {{- end }}
 {{- if .input.extra_flags }}
 

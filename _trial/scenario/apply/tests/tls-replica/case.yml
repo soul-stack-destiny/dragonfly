@@ -16,7 +16,7 @@ fixtures:
   # The secrets the unit reads by path. In production these are real Vault paths; here they are
   # provided by the case, so the render stays hermetic.
   vault:
-    secret/dragonfly/tls:
+    secret/pki/cache:
       cert: "-----BEGIN CERTIFICATE-----\ntrial-cert\n-----END CERTIFICATE-----"
       key: "-----BEGIN PRIVATE KEY-----\ntrial-key\n-----END PRIVATE KEY-----"
   input:
@@ -29,8 +29,8 @@ fixtures:
         password: "trial-reporting-password"
     tls:
       enable: true
-      cert_ref: "secret/dragonfly/tls#cert"
-      key_ref: "secret/dragonfly/tls#key"
+      cert_ref: "secret/pki/cache#cert"
+      key_ref: "secret/pki/cache#key"
     tls_replication: true
     replica_of: "10.0.0.5:6379"
     master_user: "replication"
@@ -136,8 +136,8 @@ assert:
             allow_unauthenticated: false
             tls:
               enable: true
-              cert_ref: "secret/dragonfly/tls#cert"
-              key_ref: "secret/dragonfly/tls#key"
+              cert_ref: "secret/pki/cache#cert"
+              key_ref: "secret/pki/cache#key"
             tls_replication: true
             replica_of: "10.0.0.5:6379"
             master_user: replication
@@ -149,7 +149,7 @@ assert:
             wait_ready: true
           self:
             sid: trial-host
-            covens: [apply]
+            covens: []
             choirs: []
             traits: {}
             role: ""
@@ -158,7 +158,6 @@ assert:
             network:
               primary_ip: 10.0.0.6
           role: ""
-          essence: {}
 
     # Readiness stays plain HTTP on loopback even with TLS on the data port — the flagfile keeps
     # the console out of TLS on purpose, so a local scraper needs no certificate.

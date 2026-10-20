@@ -11,7 +11,7 @@ name: dragonfly refuses TLS on an instance with no password and no client certif
 fixtures:
   default_destiny_source: "file://../../{name}"
   vault:
-    secret/dragonfly/tls:
+    secret/pki/cache:
       cert: "-----BEGIN CERTIFICATE-----\ntrial-cert\n-----END CERTIFICATE-----"
       key: "-----BEGIN PRIVATE KEY-----\ntrial-key\n-----END PRIVATE KEY-----"
   input:
@@ -19,8 +19,8 @@ fixtures:
     allow_unauthenticated: true
     tls:
       enable: true
-      cert_ref: "secret/dragonfly/tls#cert"
-      key_ref: "secret/dragonfly/tls#key"
+      cert_ref: "secret/pki/cache#cert"
+      key_ref: "secret/pki/cache#key"
   soulprint:
     os:
       arch: amd64

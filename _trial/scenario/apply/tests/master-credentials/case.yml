@@ -1,0 +1,115 @@
+# A master that carries replication credentials. A Sentinel failover demotes the old master with a
+# bare REPLICAOF and sends no credentials, so master_user/master_auth must render without
+# replica_of. This case is red if the unit refuses them there; it cannot see the flagfile line
+# itself, since the suite never executes a template — that line was checked against a running 2.0.2.
+name: dragonfly renders replication credentials on a master
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    version: "2.0.2"
+    password: "trial-password"
+    admin_password: "trial-admin-password"
+    users:
+      replica:
+        perms: "-@all +replconf +ping +dfly"
+        state: "on"
+        password: "trial-replica-password"
+    master_user: "replica"
+    master_auth: "trial-replica-password"
+  soulprint:
+    os:
+      arch: amd64
+    network:
+      primary_ip: 10.0.0.5
+
+assert:
+  task_present:
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/dragonfly/dragonfly.conf
+        template_content: "<present>"
+        render_context:
+          vars:
+            listen_host: 10.0.0.5
+            console_enabled: true
+            console_listen_host: 127.0.0.1
+            acl_enabled: true
+            acl_path: /etc/dragonfly/users.acl
+            tls_enabled: false
+            tls_ca_enabled: false
+            tls_cert_path: /etc/dragonfly/tls/dragonfly.crt
+            tls_key_path: /etc/dragonfly/tls/dragonfly.key
+            tls_ca_path: /etc/dragonfly/tls/ca.crt
+            snapshot_remote: false
+            snapshot_dir_eff: /var/lib/dragonfly
+            s3_enabled: false
+            s3_endpoint: ""
+            s3_use_https: true
+            s3_sign_payload: true
+            s3_ec2_metadata: false
+          input:
+            ensure: present
+            purge_data: false
+            version: "2.0.2"
+            sha256: ""
+            base_url: https://github.com/dragonflydb/dragonfly/releases/download
+            allow_private: false
+            bin_dir: /usr/local/bin
+            user: dragonfly
+            group: dragonfly
+            conf_dir: /etc/dragonfly
+            data_dir: /var/lib/dragonfly
+            log_dir: /var/log/dragonfly
+            host: ""
+            port: 6379
+            http_console: false
+            admin_port: 6380
+            admin_bind: ""
+            maxclients: 64000
+            maxmemory: ""
+            proactor_threads: 0
+            cache_mode: false
+            snapshot_cron: ""
+            dbfilename: dump
+            snapshot_retention_days: 0
+            snapshot_uri: ""
+            snapshot_s3: {}
+            password: trial-password
+            default_perms: "~* &* +@all -@admin -@dangerous"
+            admin_user: default_admin
+            admin_password: trial-admin-password
+            users:
+              replica:
+                perms: "-@all +replconf +ping +dfly"
+                state: "on"
+                password: trial-replica-password
+            allow_unauthenticated: false
+            tls: {}
+            tls_replication: false
+            replica_of: ""
+            master_user: replica
+            master_auth: trial-replica-password
+            extra_flags: {}
+            extra_env: {}
+            sysctl_settings: {}
+            version_check: false
+            wait_ready: true
+          self:
+            sid: trial-host
+            covens: []
+            choirs: []
+            traits: {}
+            role: ""
+            os:
+              arch: amd64
+            network:
+              primary_ip: 10.0.0.5
+          role: ""
+
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/default/dragonfly
+        mode: "0600"
+        owner: root
+        group: root

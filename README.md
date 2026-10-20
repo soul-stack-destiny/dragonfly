@@ -13,10 +13,10 @@ an upgrade across a cluster — that is orchestration, and it belongs to whateve
   apply:
     destiny: dragonfly
     input:
-      version: "1.39.0"
+      version: "2.0.2"
       # the x86_64 tarball of that release — the hash is per (version, architecture)
-      sha256: "sha256:81f88cfd0096c550e415a700c97eb5bf606db1df6106cc03584e878fd7aa126a"
-      password: "${ vault('secret/dragonfly/prod#password') }"
+      sha256: "sha256:eb9dfe654c69ab190cb3aa329ed3599ebe19c5e9a3a437bb7bc38ef52f665c88"
+      password: "${ vault('secret/team-a/cache-prod#password') }"
       maxmemory: "8GiB"
       snapshot_cron: "0 * * * *"
 ```
@@ -66,13 +66,13 @@ Two system accounts, the same split the `redis` unit uses:
 | `default_admin` | the operator | everything (`~* &* +@all`) |
 
 ```yaml
-password:       "${ vault('secret/dragonfly/prod#password') }"        # default
-admin_password: "${ vault('secret/dragonfly/prod#admin') }"           # default_admin
+password:       "${ vault('secret/team-a/cache-prod#password') }"        # default
+admin_password: "${ vault('secret/team-a/cache-prod#admin') }"           # default_admin
 users:
   reporting:
     perms: "~report:* +@read"
     state: "on"
-    password: "${ vault('secret/dragonfly/prod#reporting') }"
+    password: "${ vault('secret/team-a/cache-prod#reporting') }"
 ```
 
 Live, that comes out as:
@@ -97,13 +97,20 @@ accept a TLS configuration at all. Neither is ever written into the flagfile.
 
 ### The ACL file is all-or-nothing, and it fails quietly
 
-**With an ACL file configured, Dragonfly takes its entire user list from that file.** If `default`
-is not named in it, `default` stays the built-in passwordless account with full access — and no
-password configured anywhere else changes that.
+**With an ACL file configured, Dragonfly takes its entire user list from that file.** On 1.39, if
+`default` is not named in it, `default` stays the built-in passwordless account with full access —
+and no password configured anywhere else changes that.
 
-Worse, three different mistakes make Dragonfly reject the **whole file**, log one line, start
-anyway, and leave that same open `default` behind: a `default` entry that is disabled (`off`), a
-line the parser does not understand, and — because the hash marker is a hash — a comment line.
+Worse, three different mistakes make Dragonfly reject the **whole file**, log one line and start
+anyway: a `default` entry that is disabled (`off`), a line the parser does not understand, and —
+because the hash marker is a hash — a comment line. Every user the file declares is then gone, the
+administrative account included. On 1.39 that left the open `default` behind. On 2.0.2, for the two
+cases re-checked (a comment line, an unknown permission), `default` instead answered `NOAUTH`
+under the password in the environment file.
+
+"A line the parser does not understand" includes a permission it does not know. Dragonfly has no
+`PSYNC` and no `@replication` category, so the Redis-style replication rule `+psync +replconf`
+voids the file. A replication account here is `-@all +replconf +ping +dfly`.
 
 So this unit writes the file itself, without comments, always with `default` in it, and refuses to
 render if you try to declare `default` or the admin name in `users`.
@@ -173,8 +180,8 @@ snapshot_cron: "*/15 * * * *"
 snapshot_uri:  "s3://backups/dragonfly/prod"
 snapshot_s3:
   region:     "eu-central-1"
-  access_key: "${ vault('secret/dragonfly/prod#s3_access_key') }"
-  secret_key: "${ vault('secret/dragonfly/prod#s3_secret_key') }"
+  access_key: "${ vault('secret/team-a/cache-prod#s3_access_key') }"
+  secret_key: "${ vault('secret/team-a/cache-prod#s3_secret_key') }"
 ```
 
 On a host whose instance role already grants access, drop the keys and set
@@ -212,8 +219,8 @@ Pass Vault paths; the unit reads them and writes the PEM files under `<conf_dir>
 ```yaml
 tls:
   enable: true
-  cert_ref: "secret/dragonfly/prod#cert"
-  key_ref: "secret/dragonfly/prod#key"
+  cert_ref: "secret/team-a/cache-prod#cert"
+  key_ref: "secret/team-a/cache-prod#key"
 ```
 
 Two things follow from how Dragonfly implements TLS:
@@ -230,14 +237,18 @@ service that installs cleanly and then fails to come up.
 
 ## Replication
 
-`replica_of` makes this instance start as a replica of the given master, with `master_user` and
-`master_auth` for the credentials it authenticates with. This is the state as of startup: a later
-`REPLICAOF` over the wire wins until the process restarts.
+`replica_of` makes this instance start as a replica of the given master. This is the state as of
+startup: a later `REPLICAOF` over the wire wins until the process restarts.
+
+`master_user` and `master_auth` are the credentials it authenticates with, and they do not need
+`replica_of`. Give them to every node of a replicated set, the master included: a Sentinel
+failover demotes the old master with a bare `REPLICAOF` and sends no credentials, so a node
+without its own cannot reach the new master.
 
 ```yaml
-replica_of: "10.0.0.5:6379"
-master_user: "replication"
-master_auth: "${ vault('secret/dragonfly/prod#replication') }"
+replica_of: "10.0.0.5:6379"   # omit on the master
+master_user: "replication"     # declared in users with "-@all +replconf +ping +dfly"
+master_auth: "${ vault('secret/team-a/cache-prod#replication') }"
 tls_replication: true      # only with tls.enable
 ```
 
@@ -260,14 +271,13 @@ run rather than a week later.
 ## Tests
 
 `_trial/` holds a render-only suite: it builds the plan the unit expands into and asserts it,
-without a host and without downloading anything. Thirteen cases cover the default install, the
-two system accounts, an acknowledged open instance, TLS with replication, scheduled snapshots
-with retention, snapshots written to object storage, an upgrade from a mirror on arm64, the
-teardown, and the five refusals.
+without a host and without downloading anything. Fourteen cases cover the default install, the
+two system accounts, an acknowledged open instance, TLS with replication, replication credentials
+on a master, scheduled snapshots with retention, snapshots written to object storage, an upgrade
+from a mirror on arm64, the teardown, and the five refusals.
 
 ```bash
-soul-trial run _trial
-soul-lint validate-destiny destiny.yml
+make check    # soul-lint (destiny, wrapper service, wrapper scenario) + soul-trial run _trial
 ```
 
 ## Licence

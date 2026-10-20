@@ -355,23 +355,26 @@ input:
     description: >-
       Additional ACL users, a map of name → {perms, state, password}, rendered into
       <conf_dir>/users.acl next to the two system accounts. The password is stored as its SHA-256
-      hash, never in plaintext, and the line order is stable across runs. perms is the usual
-      Redis ACL rule string, e.g. "~cache:* +@read" for a reader; the categories Dragonfly knows
-      are the Redis ones (admin, dangerous, read, write, keyspace, pubsub, scripting, …). Do not
-      put `default` or the admin user here — both are rendered from the fields above.
+      hash, never in plaintext, and the line order is stable across runs. perms is a Redis-style
+      ACL rule string, e.g. "~cache:* +@read" for a reader, but only commands and categories
+      Dragonfly itself knows: one it does not (+psync, +@replication) voids the WHOLE file, admin
+      account included. A replication account is "-@all +replconf +ping +dfly". Do not put
+      `default` or the admin user here — both are rendered from the fields above.
     properties: {}
     additional_properties:
       type: object
-      required: [perms, state, password]
       additional_properties: false
       properties:
         perms:
           type: string
+          required: true
         state:
           type: string
+          required: true
           enum: [on, off]
         password:
           type: string
+          required: true
           secret: true
 
   allow_unauthenticated:
@@ -421,6 +424,10 @@ input:
   # ── Replication ────────────────────────────────────────────────────────────
   # Optional and per-host: this unit sets who this instance replicates from at startup. Deciding
   # who is master, and promoting one, is orchestration and belongs to whatever calls this.
+  #
+  # The credentials are independent of replica_of: a master needs them too. A Sentinel failover
+  # turns the old master into a replica with a bare REPLICAOF and sends no credentials, so a node
+  # that does not already carry them cannot authenticate to its new master.
   replica_of:
     type: string
     required: false
@@ -436,8 +443,8 @@ input:
     required: false
     default: ""
     description: >-
-      ACL user this instance authenticates as against its master. Empty → the master's `default`
-      user. Only meaningful with replica_of.
+      ACL user this instance authenticates as against its master — whether it starts as a replica
+      (replica_of) or becomes one later over the wire. Empty → the master's `default` user.
 
   master_auth:
     type: string
@@ -445,8 +452,9 @@ input:
     default: ""
     secret: true
     description: >-
-      Password this instance authenticates with against its master. Masked in logs; rendered into
-      the 0600 environment file, never into the flagfile. Only meaningful with replica_of.
+      Password this instance authenticates with against its master, in the same two cases as
+      master_user. Masked in logs; rendered into the 0600 environment file, never into the
+      flagfile.
 
   # ── Passthrough ────────────────────────────────────────────────────────────
   extra_flags:
@@ -536,8 +544,6 @@ validate:
     message: "tls_replication requires tls.enable (the replication link uses the same certificate)"
   - that: "input.admin_port == 0 || input.admin_port != input.port"
     message: "admin_port must differ from port"
-  - that: "input.replica_of != '' || (input.master_user == '' && input.master_auth == '')"
-    message: "master_user / master_auth are only meaningful with replica_of"
   - that: "input.snapshot_retention_days == 0 || input.snapshot_cron != ''"
     message: "snapshot_retention_days without snapshot_cron has nothing to prune"
   # The prune timer runs `find` over a local directory. With snapshots in a bucket it would run

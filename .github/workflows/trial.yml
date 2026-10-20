@@ -1,12 +1,8 @@
 # CI for the dragonfly Soul Stack destiny: build the toolchain from the core and run the render
 # tests.
 #
-# The core ref is pinned to the RELEASE BRANCH rather than to a tag, and that is deliberate: this
-# unit declares destiny-level `validate:` rules (the cross-field invariants that make it refuse an
-# unauthenticated instance, a caller-declared `default` user, or TLS with no way to authenticate),
-# and the current release tag does not accept that key yet — the whole suite fails to load there
-# with `unknown field "validate"`. Move the pin to a release tag once the release that carries
-# those rules ships.
+# The core ref is `main`, not the release tag: v0.1.0-beta.1 predates destiny-level `validate:`
+# and the current input dialect, and the suite does not load there.
 name: trial
 
 on:
@@ -28,7 +24,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: souls-guild/soul-stack
-          ref: release/R5
+          ref: main
           path: soul-stack
 
       - name: Set up Go
@@ -49,7 +45,7 @@ jobs:
         run: |
           "$GITHUB_WORKSPACE/bin/soul-lint" validate-destiny  dragonfly/destiny.yml
           "$GITHUB_WORKSPACE/bin/soul-lint" validate-service  dragonfly/_trial/service.yml
-          "$GITHUB_WORKSPACE/bin/soul-lint" validate-scenario dragonfly/_trial/scenario/apply/main.yml
+          "$GITHUB_WORKSPACE/bin/soul-lint" validate-scenario --service-name dragonfly dragonfly/_trial/scenario/apply/main.yml
 
       - name: Run the render tests
         run: |

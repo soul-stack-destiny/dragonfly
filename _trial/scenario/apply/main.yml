@@ -118,16 +118,18 @@ input:
     properties: {}
     additional_properties:
       type: object
-      required: [perms, state, password]
       additional_properties: false
       properties:
         perms:
           type: string
+          required: true
         state:
           type: string
+          required: true
           enum: [on, off]
         password:
           type: string
+          required: true
           secret: true
   allow_unauthenticated:
     type: boolean

@@ -40,6 +40,17 @@ file, one port for TLS and plaintext, no sentinel daemon, built-in metrics.
 All of these were confirmed against a running 1.39.0 and then checked against the sources at that
 tag; the file and line references below are from there. The first four fail quietly if ignored.
 
+Re-run against the 2.0.2 release binary with the rendered flagfile, ACL file and environment file:
+`PING` without `AUTH` → `NOAUTH`; `default` → `NOPERM` on `CONFIG SET`; the console answers
+`/metrics` over HTTP/1.1 on loopback only (an HTTP/1.0 request without `Host` is read as a Redis
+command); an
+unknown `DFLY_` name aborts; a node started as a master replicates with its own
+`masteruser`/`masterauth` after a bare `REPLICAOF`, under a user holding only
+`-@all +replconf +ping +dfly`. One difference: a comment line still voids the ACL file
+(`Error materializing acl file`, `default_admin` gone), but `default` then answers `NOAUTH` rather
+than open, because the password in the environment file applies. An unknown permission voids it
+the same way (`Unrecognized parameter +PSYNC`, `+@REPLICATION`): Dragonfly has neither.
+
 1. **A missing `default` in the ACL file is filled in with an OPEN account.** `LoadToRegistryFromFile`
    (`src/server/acl/acl_family.cc`) ends with `if (!registry.contains("default")) { … Update(registry_->DefaultUserUpdateRequest() …) }`,
    and that request is literally nopass + `+@all` + `~*` + all channels (`user_registry.cc`). It
@@ -132,7 +143,7 @@ soul-trial run _trial
 ```
 
 Cases live in `_trial/scenario/apply/tests/<case>/`: `render-defaults`, `admin-account`,
-`open-instance`, `tls-replica`, `snapshot-retention`, `snapshot-to-s3`,
+`open-instance`, `tls-replica`, `master-credentials`, `snapshot-retention`, `snapshot-to-s3`,
 `version-upgrade-from-mirror`, `remove-purge`, and the five refusals — `password-required`,
 `default-user-reserved`, `admin-user-reserved`, `tls-needs-authentication`,
 `s3-retention-refused`.
@@ -144,10 +155,10 @@ Adding a case:
 - Use `assert.task_present` / `task_absent` with `params_subset` (a partial match on a task's
   params). `task_present` must match exactly one task, so disambiguate a repeated module by a
   distinct `path` or `name`. `<present>` just checks a key exists and is a non-empty string.
-- `render_context` in an assertion is compared **in full**, not as a subset. `tls-replica` and
-  `snapshot-to-s3` (the flagfile) and `admin-account` (the ACL file) pin it, so adding an input
-  field means updating all three blocks, and a new `vars` key that a template reads means
-  updating the two flagfile blocks. They are also the only place the suite can see that a value reaches a template at
+- `render_context` in an assertion is compared **in full**, not as a subset. `tls-replica`,
+  `master-credentials` and `snapshot-to-s3` (the flagfile) and `admin-account` (the ACL file) pin
+  it, so adding an input field means updating all four blocks, and a new `vars` key that a
+  template reads means updating the three flagfile blocks. They are also the only place the suite can see that a value reaches a template at
   all, since it never executes one.
 - `fixtures.soulprint` provides the host facts the unit reads: `os.arch` (which release artifact)
   and `network.primary_ip` (the bind address).

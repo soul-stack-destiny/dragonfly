@@ -82,7 +82,7 @@ assert:
             wait_ready: true
           self:
             sid: trial-host
-            covens: [apply]
+            covens: []
             choirs: []
             traits: {}
             role: ""
@@ -91,7 +91,6 @@ assert:
             network:
               primary_ip: 10.0.0.5
           role: ""
-          essence: {}
 
     # The environment file carries the `default` password and nothing else: Dragonfly needs it
     # there to accept a TLS configuration at all, while the administrative account lives only in
