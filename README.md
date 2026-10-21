@@ -144,8 +144,13 @@ what gives you older ones to fall back to. If you need to replay to an arbitrary
 not the engine for it — a replica narrows the window for a lost host, but it follows a `DEL` just
 as faithfully as a write.
 
-**Snapshots are off unless you schedule them.** With no `snapshot_cron`, Dragonfly writes one only
-when something asks for it over the wire, and a restart loses everything since then.
+**A clean stop writes a snapshot; a crash does not.** Dragonfly saves the whole dataset on its way
+down — `systemctl stop`, a restart, `SHUTDOWN` without `NOSAVE` or `FORCE` — so a planned restart
+loses nothing, as long as that save succeeds: a failed one (a full disk, an unreachable bucket) is
+only a warning in the log, and the stop still completes normally. With no `snapshot_cron`, the
+only other snapshots are the ones you ask for (`SAVE`, `BGSAVE`), and a crash, a `SIGKILL`
+(including systemd's once `TimeoutStopSec` runs out) or `SHUTDOWN NOSAVE`/`FORCE` loses everything
+written since the last of them.
 
 ```yaml
 snapshot_cron: "0 * * * *"     # hourly

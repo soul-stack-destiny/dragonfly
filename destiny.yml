@@ -210,8 +210,9 @@ input:
     default: ""
     description: >-
       Crontab-style schedule for writing a snapshot, e.g. "0 * * * *" for hourly or "*/15 * * * *"
-      for every quarter hour. Empty (default) → Dragonfly only ever snapshots when you ask it to
-      over the wire, so a restart loses everything since the last manual save. Set this on any
+      for every quarter hour. Empty (default) → a snapshot is written only when the service stops
+      cleanly (systemctl stop or restart) or when you ask for one over the wire, so a crash, a
+      SIGKILL or SHUTDOWN NOSAVE/FORCE loses everything since the last of those. Set this on any
       instance whose contents you would miss.
 
   dbfilename:
@@ -224,7 +225,8 @@ input:
       previous one, which keeps the directory bounded and makes "back up data_dir" a complete
       backup. Dragonfly's own default is "dump-{timestamp}", which keeps every snapshot forever;
       the {timestamp}, {Y}, {m} and {d} macros work here too, and if you use them, set
-      snapshot_retention_days so the directory does not grow without limit.
+      snapshot_retention_days (which needs snapshot_cron) so the directory does not grow without
+      limit.
 
   snapshot_retention_days:
     type: integer
@@ -504,12 +506,12 @@ validate:
   - that: "input.admin_port == 0 || input.admin_port != input.port"
     message: "admin_port must differ from port"
   - that: "input.snapshot_retention_days == 0 || input.snapshot_cron != ''"
-    message: "snapshot_retention_days without snapshot_cron has nothing to prune"
+    message: "snapshot_retention_days requires snapshot_cron: without a schedule, snapshots are written only on a clean stop or on request"
   # The prune timer only sees local files.
   - that: "input.snapshot_retention_days == 0 || input.snapshot_uri == ''"
     message: "snapshot_retention_days prunes local files and cannot reach an object store: use the bucket's own lifecycle rules with snapshot_uri"
   - that: "input.snapshot_uri == '' || input.snapshot_cron != ''"
-    message: "snapshot_uri without snapshot_cron never writes anything to the bucket"
+    message: "snapshot_uri requires snapshot_cron: without a schedule, the bucket gets a snapshot only on a clean stop or on request"
   - that: "!has(input.snapshot_s3) || size(input.snapshot_s3) == 0 || input.snapshot_uri != ''"
     message: "snapshot_s3 settings are only meaningful with snapshot_uri"
   - that: "!has(input.snapshot_s3) || !has(input.snapshot_s3.ec2_metadata) || !input.snapshot_s3.ec2_metadata || !has(input.snapshot_s3.access_key) || input.snapshot_s3.access_key == ''"

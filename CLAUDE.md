@@ -76,7 +76,7 @@ the same way (`Unrecognized parameter +PSYNC`, `+@REPLICATION`): Dragonfly has n
    (Only the `_file` form is exposed here; `tls_ca_cert_dir` would satisfy the same gate and is
    reachable through `extra_flags` if anyone needs a directory of CAs.)
 
-Two more about snapshots, both confirmed the same way:
+Three more about snapshots, the first two confirmed the same way and the third on 2.0.2:
 
 - **`--dir` is a location, not a path**, and it is used for LOADING as well as writing. Pointing
   it at `s3://…` makes the store a startup dependency: if the bucket cannot be listed, Dragonfly
@@ -87,8 +87,19 @@ Two more about snapshots, both confirmed the same way:
   `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) or from the instance role with `--s3_ec2_metadata`. Only
   the `DFLY_` prefix is policed, so the AWS names pass through the same environment file — the
   log line `aws: loaded credentials; provider=environment` is how you confirm they arrived.
+- **A clean stop writes a snapshot, with or without `snapshot_cron`.** `ServerFamily::Shutdown`
+  (`server_family.cc`) calls `DoSave()` while `save_on_shutdown_` holds (default true,
+  `server_family.h`) and `dbfilename` is not empty; SIGTERM gets there through `service.Shutdown()`
+  in `dfly_main.cc`, and only `SHUTDOWN NOSAVE`/`FORCE` clear the flag. Live: a key written after
+  the last snapshot survived `systemctl stop` and start with no `SAVE`. A failed save is only a
+  `LOG(WARNING)`, and the stop still completes normally. So `snapshot_cron` bounds what a crash or
+  a SIGKILL loses, not what a restart loses. `TimeoutStopSec` has to cover the worst stop: it
+  first waits out whatever is in flight (the startup load, a scheduled save, a client's `SAVE` or
+  `BGSAVE`), then writes its own, so the longer of a full load and two full saves. The restart
+  task's `timeout: 60s` is far shorter: a long save fails the run while systemd finishes the
+  restart anyway.
 
-Two more, less dangerous but easy to trip over:
+Three more, less dangerous but easy to trip over:
 
 - **Environment variables are `DFLY_<flag>`, spelled exactly as the flag.** `DFLY_requirepass`
   works; `DFLY_REQUIREPASS` and `DFLY_PASSWORD` make the process abort on startup with "unknown

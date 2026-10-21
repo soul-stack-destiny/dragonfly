@@ -16,7 +16,7 @@ SyslogIdentifier=dragonfly
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM
-# Shutdown may write a snapshot of the whole dataset.
+# Shutdown writes a snapshot of the whole dataset; past this limit systemd kills it unfinished.
 TimeoutStopSec=1800
 LimitNOFILE=262144
 
